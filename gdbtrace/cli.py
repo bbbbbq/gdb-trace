@@ -22,6 +22,7 @@ from .state import (
     validate_arch,
     validate_mode,
     validate_output,
+    validate_registers,
     validate_target,
 )
 
@@ -103,9 +104,13 @@ def cmd_set_mode(args: argparse.Namespace, paths: Paths) -> int:
     return _set_session_value(paths, "mode", validate_mode(args.mode))
 
 
+def cmd_set_registers(args: argparse.Namespace, paths: Paths) -> int:
+    return _set_session_value(paths, "registers", validate_registers(args.registers))
+
+
 def cmd_show_config(_: argparse.Namespace, paths: Paths) -> int:
     payload = session_state(paths)
-    for key in ("arch", "elf", "output", "mode"):
+    for key in ("arch", "elf", "output", "mode", "registers"):
         print(f"{key}={payload.get(key, '<unset>')}")
     return 0
 
@@ -124,6 +129,10 @@ def cmd_clear_output(_: argparse.Namespace, paths: Paths) -> int:
 
 def cmd_clear_mode(_: argparse.Namespace, paths: Paths) -> int:
     return _clear_session_value(paths, "mode")
+
+
+def cmd_clear_registers(_: argparse.Namespace, paths: Paths) -> int:
+    return _clear_session_value(paths, "registers")
 
 
 def _active_runtime(paths: Paths) -> dict[str, str]:
@@ -203,6 +212,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             mode=session["mode"],
             target=target,
             elf=session["elf"],
+            registers=session.get("registers", "off") == "on",
         )
     )
     filtered_events = apply_filters(
@@ -221,6 +231,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             "elf": session["elf"],
             "output": session["output"],
             "mode": session["mode"],
+            "registers": session.get("registers", "off"),
         },
         "capture_backend": capture_result.backend,
         "event_count": len(filtered_events),
@@ -286,11 +297,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_command("set-elf", cmd_set_elf).add_argument("elf")
     add_command("set-output", cmd_set_output).add_argument("output")
     add_command("set-mode", cmd_set_mode).add_argument("mode")
+    add_command("set-registers", cmd_set_registers).add_argument("registers")
     add_command("show-config", cmd_show_config)
     add_command("clear-arch", cmd_clear_arch)
     add_command("clear-elf", cmd_clear_elf)
     add_command("clear-output", cmd_clear_output)
     add_command("clear-mode", cmd_clear_mode)
+    add_command("clear-registers", cmd_clear_registers)
 
     start_parser = add_command("start", cmd_start)
     start_parser.add_argument("--target")

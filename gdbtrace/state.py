@@ -9,6 +9,7 @@ from typing import Any
 
 ARCH_CHOICES = ("thumb", "thumb2", "arm32", "aarch64", "riscv32", "riscv64")
 MODE_CHOICES = ("inst", "call", "both")
+REGISTER_CHOICES = ("on", "off")
 
 
 class GdbTraceError(RuntimeError):
@@ -84,6 +85,12 @@ def validate_mode(value: str) -> str:
 def validate_output(value: str) -> str:
     if not value.endswith(".log"):
         raise GdbTraceError("output path must end with .log")
+    return value
+
+
+def validate_registers(value: str) -> str:
+    if value not in REGISTER_CHOICES:
+        raise GdbTraceError(f"registers must be one of: {', '.join(REGISTER_CHOICES)}")
     return value
 
 

@@ -49,11 +49,13 @@
 - `gdbtrace set-elf <file>`
 - `gdbtrace set-output <path.log>`
 - `gdbtrace set-mode <inst|call|both>`
+- `gdbtrace set-registers <on|off>`
 - `gdbtrace show-config`
 - `gdbtrace clear-arch`
 - `gdbtrace clear-elf`
 - `gdbtrace clear-output`
 - `gdbtrace clear-mode`
+- `gdbtrace clear-registers`
 - `gdbtrace start [--target <host:port>] [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]`
 - `gdbtrace pause`
 - `gdbtrace save`
@@ -65,8 +67,9 @@
 - `set-elf`：设置当前会话使用的 ELF 或符号文件路径，仅对当前会话生效。
 - `set-output`：设置当前会话的日志输出路径，输出文件约定为 `.log`。
 - `set-mode`：设置当前会话的追踪模式，取值为 `inst`、`call`、`both`。
-- `show-config`：显示当前会话内 `arch`、`elf`、`output`、`mode` 的当前值。
-- `clear-arch`、`clear-elf`、`clear-output`、`clear-mode`：清除当前会话中的对应配置项。
+- `set-registers`：设置是否在指令行后追加通用寄存器输出，取值为 `on` 或 `off`，默认视为 `off`。
+- `show-config`：显示当前会话内 `arch`、`elf`、`output`、`mode`、`registers` 的当前值。
+- `clear-arch`、`clear-elf`、`clear-output`、`clear-mode`、`clear-registers`：清除当前会话中的对应配置项。
 
 生命周期命令语义：
 
@@ -85,9 +88,11 @@
 `set-mode` 语义：
 
 - `inst`：仅输出纯指令流，不带任何函数调用附加信息；单行格式固定为 `PC + 空格 + 指令`。
+- `inst`：若 `set-registers on`，则每条指令后追加一行 `regs:`，输出当前架构的通用寄存器值。
 - `call`：仅输出函数调用序列，使用 4 个空格缩进表示嵌套；单行格式固定为 `call <func>` 或 `ret <func>`。
 - `both`：输出带函数层级的指令流，格式为 `call/ret + PC + 指令`，统一按每层 4 个空格缩进。
 - `both`：除主 `both` 日志外，还会额外生成一份 `call` 日志，便于单独查看函数调用序列。
+- `both`：若 `set-registers on`，则函数体内每条指令后追加一行 `regs:`，缩进层级比所属指令再深 4 个空格。
 
 自定义指令语义：
 
@@ -122,6 +127,7 @@ error: missing required trace config: arch, elf, output, mode
 日志格式约束：
 
 - `inst` 模式仅保留 `PC + 指令`，不包含序号字段、`opcode=...`、`disasm=`、`arch_mode`、`symbol`。
+- `set-registers off` 时，不输出任何寄存器行；`set-registers on` 时，在每条指令行后追加一行 `regs: <reg>=<value> ...`。
 - `call` 模式仅保留 `call <func>` 和 `ret <func>`，通过每层 4 个空格表示函数嵌套。
 - `both` 模式为两者结合：`call/ret` 行沿用 `call` 模式，指令行沿用 `inst` 模式，并显示在所属函数层级下。
 - `both` 模式落盘为两份 `.log` 文件：原始 `set-output` 路径保存 `both` 内容，派生的 `<stem>.call.log` 保存 `call` 内容。
@@ -135,6 +141,15 @@ error: missing required trace config: arch, elf, output, mode
 0x400580 stp x29, x30, [sp, #-16]!
 0x400584 mov x29, sp
 0x400588 bl func_a
+```
+
+`inst + registers` 示例：
+
+```log
+0x400724 push {r11, lr}
+    regs: r0=0x00000005 r1=0x00000007 r11=0x7fffffe0 lr=0x00010490 sp=0x7fffffd0
+0x400728 add r11, sp, #0
+    regs: r0=0x00000005 r1=0x00000007 r11=0x7fffffd0 lr=0x00010490 sp=0x7fffffd0
 ```
 
 `call` 示例：
@@ -163,6 +178,21 @@ call main
             0x4005c0 ret
         ret func_b
         0x4005b4 ret
+    ret func_a
+ret main
+```
+
+`both + registers` 示例：
+
+```log
+call main
+    0x400724 push {r11, lr}
+        regs: r0=0x00000005 r1=0x00000007 r11=0x7fffffe0 lr=0x00010490 sp=0x7fffffd0
+    0x400728 add r11, sp, #0
+        regs: r0=0x00000005 r1=0x00000007 r11=0x7fffffd0 lr=0x00010490 sp=0x7fffffd0
+    call func_a
+        0x400740 bl func_b
+            regs: r0=0x00000005 r1=0x00000007 r11=0x7fffffd0 lr=0x00010490 sp=0x7fffffd0
     ret func_a
 ret main
 ```
@@ -215,6 +245,7 @@ ret main
 - 输出文件场景：确认追踪结果生成为 `.log` 文件，而不是 `.jsonl`。
 - 彩色输出场景：确认 log 文件中包含 ANSI 颜色码，且 `call`、`ret`、指令行可区分。
 - `inst` 模式：确认每行只包含 `PC + 指令`，不包含序号、`opcode`、`disasm=`、`arch_mode`、`symbol`。
+- 寄存器可选输出场景：`set-registers off` 时确认日志不包含 `regs:` 行；`set-registers on` 时确认每条指令后追加通用寄存器行。
 - 无 `main` 符号 ELF 场景：确认真实 backend 在 `inst` 模式下仍可输出地址级指令流。
 - 无 `main` 符号 ELF 场景：确认真实 backend 在 `call` / `both` 模式下明确报错，而不是伪造函数调用层级。
 - `call` 模式：确认仅输出 `call/ret` 行，且每层嵌套固定缩进 4 个空格。

@@ -18,6 +18,7 @@ class CaptureRequest:
     mode: str
     target: str
     elf: str
+    registers: bool
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,7 @@ class StaticSampleCaptureBackend(CaptureBackend):
     name = "static"
 
     def capture(self, request: CaptureRequest) -> CaptureResult:
-        events = sample_trace_events(request.arch)
+        events = sample_trace_events(request.arch, include_registers=request.registers)
         return CaptureResult(
             backend=self.name,
             events=events,
@@ -91,7 +92,9 @@ class NativeGdbCaptureBackend(CaptureBackend):
         env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
         env["GDBTRACE_GDB_ELF"] = str(elf_path.resolve())
         env["GDBTRACE_GDB_OUTPUT"] = str(output_path)
+        env["GDBTRACE_GDB_ARCH"] = request.arch
         env["GDBTRACE_GDB_SYMBOL_MODE"] = "main" if has_main_symbol else "entry"
+        env["GDBTRACE_GDB_REGISTERS"] = "on" if request.registers else "off"
         env.setdefault("GDBTRACE_GDB_MAX_STEPS", "4096")
 
         command = [
@@ -178,7 +181,9 @@ class QemuRemoteCaptureBackend(CaptureBackend):
             env["GDBTRACE_GDB_TARGET"] = request.target
             env["GDBTRACE_GDB_TRANSPORT"] = "remote"
             env["GDBTRACE_GDB_SYSROOT"] = sysroot
+            env["GDBTRACE_GDB_ARCH"] = request.arch
             env["GDBTRACE_GDB_SYMBOL_MODE"] = "main" if has_main_symbol else "entry"
+            env["GDBTRACE_GDB_REGISTERS"] = "on" if request.registers else "off"
             env.setdefault("GDBTRACE_GDB_MAX_STEPS", "8192")
 
             command = [

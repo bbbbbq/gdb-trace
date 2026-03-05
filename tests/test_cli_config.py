@@ -47,26 +47,35 @@ class CliConfigTest(unittest.TestCase):
         self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
         self.assertEqual(self.run_cli("set-output", "trace.log").returncode, 0)
         self.assertEqual(self.run_cli("set-mode", "both").returncode, 0)
+        self.assertEqual(self.run_cli("set-registers", "on").returncode, 0)
         shown = self.run_cli("show-config")
         self.assertIn("arch=thumb2", shown.stdout)
         self.assertIn("elf=demo.elf", shown.stdout)
         self.assertIn("output=trace.log", shown.stdout)
         self.assertIn("mode=both", shown.stdout)
+        self.assertIn("registers=on", shown.stdout)
 
         self.assertEqual(self.run_cli("clear-arch").returncode, 0)
         self.assertEqual(self.run_cli("clear-elf").returncode, 0)
         self.assertEqual(self.run_cli("clear-output").returncode, 0)
         self.assertEqual(self.run_cli("clear-mode").returncode, 0)
+        self.assertEqual(self.run_cli("clear-registers").returncode, 0)
         cleared = self.run_cli("show-config")
         self.assertIn("arch=<unset>", cleared.stdout)
         self.assertIn("elf=<unset>", cleared.stdout)
         self.assertIn("output=<unset>", cleared.stdout)
         self.assertIn("mode=<unset>", cleared.stdout)
+        self.assertIn("registers=<unset>", cleared.stdout)
 
     def test_rejects_invalid_output_extension(self) -> None:
         result = self.run_cli("set-output", "trace.txt")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error: output path must end with .log", result.stdout)
+
+    def test_rejects_invalid_register_toggle(self) -> None:
+        result = self.run_cli("set-registers", "maybe")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("error: registers must be one of: on, off", result.stdout)
 
 
 if __name__ == "__main__":

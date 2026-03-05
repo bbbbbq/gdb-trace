@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 
@@ -14,23 +14,62 @@ class TraceEvent:
     function: str
     pc: str = ""
     instruction: str = ""
+    registers: dict[str, str] = field(default_factory=dict)
 
 
-def sample_trace_events(arch: str) -> list[TraceEvent]:
+def _sample_registers(arch: str) -> dict[str, str]:
+    if arch == "aarch64":
+        return {
+            "x0": "0x0000000000000005",
+            "x1": "0x0000000000000007",
+            "x29": "0x0000007ffffff0",
+            "x30": "0x0000000000400590",
+            "sp": "0x0000007fffffe0",
+        }
+    if arch in {"arm32", "thumb", "thumb2"}:
+        return {
+            "r0": "0x00000005",
+            "r1": "0x00000007",
+            "r11": "0x7fffffe0",
+            "lr": "0x00010490",
+            "sp": "0x7fffffd0",
+        }
+    if arch in {"riscv32", "riscv64"}:
+        return {
+            "a0": "0x00000005" if arch == "riscv32" else "0x0000000000000005",
+            "a1": "0x00000007" if arch == "riscv32" else "0x0000000000000007",
+            "ra": "0x00010190" if arch == "riscv32" else "0x0000000000010180",
+            "sp": "0x7fffffd0" if arch == "riscv32" else "0x0000003ffffff0",
+        }
+    return {}
+
+
+def _inst(arch: str, depth: int, function: str, pc: str, instruction: str, include_registers: bool) -> TraceEvent:
+    return TraceEvent(
+        "inst",
+        depth,
+        function,
+        pc,
+        instruction,
+        registers=_sample_registers(arch) if include_registers else {},
+    )
+
+
+def sample_trace_events(arch: str, include_registers: bool = False) -> list[TraceEvent]:
     if arch == "aarch64":
         return [
             TraceEvent("call", 0, "main"),
-            TraceEvent("inst", 1, "main", "0x400580", "stp x29, x30, [sp, #-16]!"),
-            TraceEvent("inst", 1, "main", "0x400584", "mov x29, sp"),
-            TraceEvent("inst", 1, "main", "0x400588", "bl func_a"),
+            _inst(arch, 1, "main", "0x400580", "stp x29, x30, [sp, #-16]!", include_registers),
+            _inst(arch, 1, "main", "0x400584", "mov x29, sp", include_registers),
+            _inst(arch, 1, "main", "0x400588", "bl func_a", include_registers),
             TraceEvent("call", 1, "func_a"),
-            TraceEvent("inst", 2, "func_a", "0x4005a8", "sub sp, sp, #0x10"),
-            TraceEvent("inst", 2, "func_a", "0x4005ac", "bl func_b"),
+            _inst(arch, 2, "func_a", "0x4005a8", "sub sp, sp, #0x10", include_registers),
+            _inst(arch, 2, "func_a", "0x4005ac", "bl func_b", include_registers),
             TraceEvent("call", 2, "func_b"),
-            TraceEvent("inst", 3, "func_b", "0x4005bc", "mov x1, x0"),
-            TraceEvent("inst", 3, "func_b", "0x4005c0", "ret"),
+            _inst(arch, 3, "func_b", "0x4005bc", "mov x1, x0", include_registers),
+            _inst(arch, 3, "func_b", "0x4005c0", "ret", include_registers),
             TraceEvent("ret", 2, "func_b"),
-            TraceEvent("inst", 2, "func_a", "0x4005b4", "ret"),
+            _inst(arch, 2, "func_a", "0x4005b4", "ret", include_registers),
             TraceEvent("ret", 1, "func_a"),
             TraceEvent("ret", 0, "main"),
         ]
@@ -48,11 +87,11 @@ def sample_trace_events(arch: str) -> list[TraceEvent]:
         }[arch]
         return [
             TraceEvent("call", 0, "main"),
-            TraceEvent("inst", 1, "main", entry_pc, first_inst),
-            TraceEvent("inst", 1, "main", "0x00010484", "bl func_a"),
+            _inst(arch, 1, "main", entry_pc, first_inst, include_registers),
+            _inst(arch, 1, "main", "0x00010484", "bl func_a", include_registers),
             TraceEvent("call", 1, "func_a"),
-            TraceEvent("inst", 2, "func_a", "0x00010498", "mov r0, r1"),
-            TraceEvent("inst", 2, "func_a", "0x0001049c", "bx lr"),
+            _inst(arch, 2, "func_a", "0x00010498", "mov r0, r1", include_registers),
+            _inst(arch, 2, "func_a", "0x0001049c", "bx lr", include_registers),
             TraceEvent("ret", 1, "func_a"),
             TraceEvent("ret", 0, "main"),
         ]
@@ -72,17 +111,17 @@ def sample_trace_events(arch: str) -> list[TraceEvent]:
         }[arch]
         return [
             TraceEvent("call", 0, "main"),
-            TraceEvent("inst", 1, "main", entry_pc, first_inst),
-            TraceEvent("inst", 1, "main", second_pc, "jal ra,func_a"),
+            _inst(arch, 1, "main", entry_pc, first_inst, include_registers),
+            _inst(arch, 1, "main", second_pc, "jal ra,func_a", include_registers),
             TraceEvent("call", 1, "func_a"),
-            TraceEvent("inst", 2, "func_a", "0x000101b0", "mv a0,a1"),
-            TraceEvent("inst", 2, "func_a", "0x000101b4", "ret"),
+            _inst(arch, 2, "func_a", "0x000101b0", "mv a0,a1", include_registers),
+            _inst(arch, 2, "func_a", "0x000101b4", "ret", include_registers),
             TraceEvent("ret", 1, "func_a"),
             TraceEvent("ret", 0, "main"),
         ]
 
     return [
         TraceEvent("call", 0, "main"),
-        TraceEvent("inst", 1, "main", "0x0", "nop"),
+        _inst(arch, 1, "main", "0x0", "nop", include_registers),
         TraceEvent("ret", 0, "main"),
     ]

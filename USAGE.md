@@ -54,11 +54,13 @@ python3 -m gdbtrace set-arch <thumb|thumb2|arm32|aarch64|riscv32|riscv64>
 python3 -m gdbtrace set-elf <file>
 python3 -m gdbtrace set-output <path.log>
 python3 -m gdbtrace set-mode <inst|call|both>
+python3 -m gdbtrace set-registers <on|off>
 python3 -m gdbtrace show-config
 python3 -m gdbtrace clear-arch
 python3 -m gdbtrace clear-elf
 python3 -m gdbtrace clear-output
 python3 -m gdbtrace clear-mode
+python3 -m gdbtrace clear-registers
 ```
 
 3. 生命周期命令
@@ -80,6 +82,7 @@ python3 -m gdbtrace set-arch aarch64
 python3 -m gdbtrace set-elf demo.elf
 python3 -m gdbtrace set-output ./demo.log
 python3 -m gdbtrace set-mode both
+python3 -m gdbtrace set-registers off
 
 python3 -m gdbtrace start
 python3 -m gdbtrace save
@@ -109,6 +112,21 @@ python3 -m gdbtrace stop
 0x400580 stp x29, x30, [sp, #-16]!
 0x400584 mov x29, sp
 0x400588 bl func_a
+```
+
+如果启用寄存器输出：
+
+```bash
+python3 -m gdbtrace set-registers on
+```
+
+日志会在每条指令后追加一行寄存器：
+
+```log
+0x400724 push {r11, lr}
+    regs: r0=0x00000005 r1=0x00000007 r11=0x7fffffe0 lr=0x00010490 sp=0x7fffffd0
+0x400728 add r11, sp, #0
+    regs: r0=0x00000005 r1=0x00000007 r11=0x7fffffd0 lr=0x00010490 sp=0x7fffffd0
 ```
 
 ### call
@@ -144,6 +162,7 @@ ret main
 
 - `both` 主日志保留 `call/ret + 指令`
 - `both` 的派生 `*.call.log` 只保留 `call/ret`
+- `set-registers on` 时，`inst` 和 `both` 模式会在每条指令后追加一行 `regs:`
 - 动态库调用优先显示真实函数名，不把 `foo@plt` 当作最终调用边界
 - 若缺少稳定符号名，允许显示为 `sub_<addr>`
 
@@ -213,6 +232,7 @@ python3 -m gdbtrace set-arch arm32
 python3 -m gdbtrace set-elf /tmp/arm32_sample
 python3 -m gdbtrace set-output ./arm32_sample.log
 python3 -m gdbtrace set-mode both
+python3 -m gdbtrace set-registers on
 
 python3 -m gdbtrace start
 python3 -m gdbtrace save

@@ -119,6 +119,67 @@ def _next_stack(
     return next_stack
 
 
+def _register_names(arch: str) -> list[str]:
+    if arch == "aarch64":
+        return [*(f"x{index}" for index in range(31)), "sp"]
+    if arch in {"arm32", "thumb", "thumb2"}:
+        return [*(f"r{index}" for index in range(13)), "sp", "lr"]
+    if arch in {"riscv32", "riscv64"}:
+        return [
+            "ra",
+            "sp",
+            "gp",
+            "tp",
+            "t0",
+            "t1",
+            "t2",
+            "s0",
+            "s1",
+            "a0",
+            "a1",
+            "a2",
+            "a3",
+            "a4",
+            "a5",
+            "a6",
+            "a7",
+            "s2",
+            "s3",
+            "s4",
+            "s5",
+            "s6",
+            "s7",
+            "s8",
+            "s9",
+            "s10",
+            "s11",
+            "t3",
+            "t4",
+            "t5",
+            "t6",
+        ]
+    return []
+
+
+def _format_register_value(value: int, arch: str) -> str:
+    width = 16 if arch in {"aarch64", "riscv64"} else 8
+    mask = (1 << (width * 4)) - 1
+    return f"0x{value & mask:0{width}x}"
+
+
+def _current_registers(arch: str, enabled: bool) -> dict[str, str]:
+    if not enabled:
+        return {}
+    registers: dict[str, str] = {}
+    for name in _register_names(arch):
+        try:
+            value = int(gdb.parse_and_eval(f"${name}"))
+        except gdb.error:
+            continue
+        registers[name] = _format_register_value(value, arch)
+    return registers
+
+
 def _common_prefix_size(left: list[str], right: list[str]) -> int:
     common = 0
     for left_value, right_value in zip(left, right):
@@ -169,7 +230,7 @@ def _emit_stack_transition(
         )
 
 
-def _step_until_exit(max_steps: int, events: list[dict[str, object]]) -> int:
+def _step_until_exit(max_steps: int, events: list[dict[str, object]], arch: str, register_output: bool) -> int:
     steps = 0
     while steps < max_steps:
         try:
@@ -185,6 +246,7 @@ def _step_until_exit(max_steps: int, events: list[dict[str, object]]) -> int:
                 "function": "",
                 "pc": pc,
                 "instruction": instruction,
+                "registers": _current_registers(arch, register_output),
             }
         )
         steps += 1
@@ -205,6 +267,8 @@ def run() -> None:
     max_steps = int(os.environ.get("GDBTRACE_GDB_MAX_STEPS", "4096"))
     transport = os.environ.get("GDBTRACE_GDB_TRANSPORT", "native")
     symbol_mode = os.environ.get("GDBTRACE_GDB_SYMBOL_MODE", "main")
+    arch = os.environ.get("GDBTRACE_GDB_ARCH", "")
+    register_output = os.environ.get("GDBTRACE_GDB_REGISTERS", "off") == "on"
 
     gdb.execute("set pagination off")
     gdb.execute("set confirm off")
@@ -231,7 +295,7 @@ def run() -> None:
 
     events: list[dict[str, object]] = []
     if symbol_mode == "entry":
-        steps = _step_until_exit(max_steps, events)
+        steps = _step_until_exit(max_steps, events, arch, register_output)
         if steps >= max_steps:
             raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
         output_path.write_text(json.dumps(events, indent=2), encoding="utf-8")
@@ -257,6 +321,7 @@ def run() -> None:
                 "function": current_stack[-1],
                 "pc": pc,
                 "instruction": instruction,
+                "registers": _current_registers(arch, register_output),
             }
         )
         steps += 1

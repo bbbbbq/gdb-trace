@@ -19,6 +19,7 @@
 - 已完成第十二批代码：`both` 模式双日志输出。
 - 已完成第十三批代码：动态库调用去除 `@plt` 边界并补充地址级子调用。
 - 已完成第十四批代码：独立使用指南文档。
+- 已完成第十五批代码：可选的通用寄存器输出。
 
 ## 已完成内容
 
@@ -31,6 +32,7 @@
 - 已建立 Python CLI 最小工程骨架。
 - 已实现目标地址配置命令：`set-target`、`set-default-target`、`show-target`、`clear-target`、`clear-default-target`。
 - 已实现会话级配置命令：`set-arch`、`set-elf`、`set-output`、`set-mode`、`show-config`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode`。
+- 已实现会话级寄存器输出配置命令：`set-registers`、`clear-registers`，用于控制是否在指令后输出通用寄存器。
 - 已实现生命周期命令：`start`、`pause`、`save`、`stop`。
 - 已实现 `start` 的配置校验、缺失项聚合报错、暂停后恢复逻辑。
 - 已实现最小运行时状态文件与最小 `.log` 落盘逻辑。
@@ -62,6 +64,7 @@
 - 已新增 `tests/test_qemu_user_userspace_apps.py` 中的 `printf` 用户态真实测试，覆盖 `arm32` 与 `riscv64` 的 `qemu-user` 调试链路。
 - 已实现动态库调用名归一化：优先展示真实函数名，不将 `foo@plt` 单独作为最终调用边界；在缺少稳定符号名时补充地址型函数名 `sub_<addr>`。
 - 已新增 [USAGE.md](/Users/caojunze424/code/gdb_trace/USAGE.md)，集中说明 CLI 配置流程、真实后端示例、日志输出规则和常见问题。
+- 已在事件模型、真实 GDB 后端和日志格式化层中接入可选寄存器输出；开启后，`inst` 与 `both` 模式会在每条指令后追加 `regs:` 行。
 
 ## 当前验证状态
 
@@ -110,6 +113,9 @@
 - 已在 Docker 容器 `ubuntu` 中完成 `both` 双日志输出自动化测试，覆盖生命周期、格式和元数据。
 - 已在 Docker 容器 `ubuntu` 中完成动态库调用展开验证，确认 `arm32` `printf` 用户态 trace 不再将 `printf@plt` 作为单独边界，并能继续展示 libc 内部地址级子调用。
 - 已完成使用指南文档一致性检查，确保其与现有 CLI、日志模式、真实后端和当前需求文档一致。
+- 已补充寄存器输出开关与日志格式说明。
+- 已在 Docker 容器 `ubuntu` 中完成寄存器输出相关自动化测试，覆盖静态样例、`gdb-native` `aarch64` 和 `gdb-qemu-arm` `arm32` 三条链路。
+- 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 41 项自动化测试全部通过。
 
 ## 下一步
 

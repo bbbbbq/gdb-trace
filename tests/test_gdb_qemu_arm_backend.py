@@ -67,12 +67,13 @@ class QemuArmBackendTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         return output_path
 
-    def configure(self, arch: str, elf_path: Path, output_path: Path, mode: str) -> None:
+    def configure(self, arch: str, elf_path: Path, output_path: Path, mode: str, registers: str = "off") -> None:
         self.assertEqual(self.run_cli("set-target", PORTS[arch]).returncode, 0)
         self.assertEqual(self.run_cli("set-arch", arch).returncode, 0)
         self.assertEqual(self.run_cli("set-elf", str(elf_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(output_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-mode", mode).returncode, 0)
+        self.assertEqual(self.run_cli("set-registers", registers).returncode, 0)
 
     def strip_program(self, elf_path: Path) -> Path:
         stripped_path = elf_path.with_name(f"{elf_path.name}_stripped")
@@ -214,6 +215,22 @@ class QemuArmBackendTest(unittest.TestCase):
             "error: ELF without main symbol supports only inst mode in real backends",
             result.stdout,
         )
+
+    def test_qemu_backend_can_emit_registers_for_arm32(self) -> None:
+        elf_path = self.compile_program("arm32_sample.c", "arm32")
+        output_path = self.state_dir / "arm32_registers.log"
+        self.configure("arm32", elf_path, output_path, "both", registers="on")
+
+        start = self.run_cli("start")
+        self.assertEqual(start.returncode, 0, msg=start.stdout)
+        save = self.run_cli("save")
+        self.assertEqual(save.returncode, 0, msg=save.stdout)
+
+        content = output_path.read_text(encoding="utf-8")
+        self.assertIn("[registers] on", content)
+        self.assertIn("regs: r0=", content)
+        self.assertIn("lr=", content)
+        self.run_cli("stop")
 
 
 if __name__ == "__main__":
