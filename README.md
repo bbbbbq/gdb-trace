@@ -190,6 +190,7 @@ ret main
 - 复杂样例输出验证：复杂 ELF 不只验证调用边界，还要对关键路径上的代表性指令段做抽样核对，确认 `inst` 与 `both` 模式下指令顺序一致。
 - 复杂 ELF 验证重点：不仅验证“能采到 trace”，还要验证在更长指令流和更复杂调用关系下，`inst`、`call`、`both` 三种模式仍然输出正确。
 - 用户态程序验证：除基础样例和复杂样例外，还应加入更贴近真实场景的 `qemu-user` 用户态程序，覆盖动态链接、`libc` 调用、字符串处理、格式化、分支和循环。
+- `printf` 用户态程序验证：应加入显式调用 `printf` / `snprintf` 的用户态 ELF，验证格式化输出路径和 `plt` 调用边界在真实调试链路下可被采集。
 - 环境准备：当前开发容器已具备 `gdb`、`gdb-multiarch`、`qemu-arm`、`qemu-riscv32`、`qemu-riscv64`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`、`arm-linux-gnueabihf-gcc`、`riscv64-linux-gnu-gcc`。
 - 环境准备：在新的测试环境中，若缺失 `gdb-multiarch`、ARM32 交叉编译工具链或 RISC-V 交叉编译工具链，测试计划必须包含安装步骤。
 - `aarch64` 编译策略：使用容器内现有 `aarch64-linux-gnu-gcc` 编译测试 ELF。

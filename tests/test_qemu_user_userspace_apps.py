@@ -50,8 +50,9 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
             capture_output=True,
         )
 
-    def compile_arm_userspace(self, arch: str) -> tuple[Path, str]:
-        output_path = self.state_dir / f"userspace_{arch}"
+    def compile_arm_userspace(self, arch: str, source_name: str = "userspace_qemu_app.c") -> tuple[Path, str]:
+        stem = Path(source_name).stem
+        output_path = self.state_dir / f"{stem}_{arch}"
         result = subprocess.run(
             [
                 "arm-linux-gnueabihf-gcc",
@@ -60,7 +61,7 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
                 "-fno-omit-frame-pointer",
                 "-Wl,-z,now",
                 *ARM_ARCH_FLAGS[arch],
-                str(PROGRAMS_DIR / "userspace_qemu_app.c"),
+                str(PROGRAMS_DIR / source_name),
                 "-o",
                 str(output_path),
             ],
@@ -74,8 +75,9 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
         self.assertIn("dynamically linked", file_result.stdout)
         return output_path, file_result.stdout
 
-    def compile_riscv64_userspace(self) -> tuple[Path, str]:
-        output_path = self.state_dir / "userspace_riscv64"
+    def compile_riscv64_userspace(self, source_name: str = "userspace_qemu_app.c") -> tuple[Path, str]:
+        stem = Path(source_name).stem
+        output_path = self.state_dir / f"{stem}_riscv64"
         result = subprocess.run(
             [
                 "riscv64-linux-gnu-gcc",
@@ -85,7 +87,7 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
                 "-Wl,-z,now",
                 "-march=rv64gc",
                 "-mabi=lp64d",
-                str(PROGRAMS_DIR / "userspace_qemu_app.c"),
+                str(PROGRAMS_DIR / source_name),
                 "-o",
                 str(output_path),
             ],
@@ -123,6 +125,16 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
         )
         instruction_lines = [line for line in content.splitlines() if re.match(r"^\s*0x[0-9a-f]+ ", line)]
         self.assertGreaterEqual(len(instruction_lines), 25)
+
+    def assert_printf_trace(self, content: str, backend_name: str) -> None:
+        self.assertIn(f"backend={backend_name}", content)
+        self.assertIn("call emit_summary", content)
+        self.assertTrue(
+            any(marker in content for marker in ("call printf", "call printf@plt", "call __printf")),
+            msg=content,
+        )
+        instruction_lines = [line for line in content.splitlines() if re.match(r"^\s*0x[0-9a-f]+ ", line)]
+        self.assertGreaterEqual(len(instruction_lines), 12)
 
     def test_qemu_user_arm_userspace_programs(self) -> None:
         env_override = {
@@ -166,6 +178,49 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
 
             content = output_path.read_text(encoding="utf-8")
             self.assert_userspace_trace(content, "gdb-qemu-riscv")
+        finally:
+            self.run_cli("stop", env_override=env_override)
+
+    def test_qemu_user_arm_printf_program(self) -> None:
+        env_override = {
+            "GDBTRACE_CAPTURE_BACKEND": "gdb-qemu-arm",
+            "GDBTRACE_GDB_MAX_STEPS": "20000",
+            "LD_BIND_NOW": "1",
+        }
+        elf_path, _ = self.compile_arm_userspace("arm32", "userspace_printf_app.c")
+        output_path = self.state_dir / "arm32_printf.log"
+        self.configure(ARM_PORTS["arm32"], "arm32", elf_path, output_path, env_override)
+
+        try:
+            start = self.run_cli("start", env_override=env_override)
+            self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
+            save = self.run_cli("save", env_override=env_override)
+            self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
+
+            content = output_path.read_text(encoding="utf-8")
+            self.assert_printf_trace(content, "gdb-qemu-arm")
+        finally:
+            self.run_cli("stop", env_override=env_override)
+
+    def test_qemu_user_riscv64_printf_program(self) -> None:
+        env_override = {
+            "GDBTRACE_CAPTURE_BACKEND": "gdb-qemu-riscv",
+            "GDBTRACE_GDB_MAX_STEPS": "20000",
+            "GDBTRACE_GDB_QEMU_RISCV_SYSROOT": "/usr/riscv64-linux-gnu",
+            "LD_BIND_NOW": "1",
+        }
+        elf_path, _ = self.compile_riscv64_userspace("userspace_printf_app.c")
+        output_path = self.state_dir / "riscv64_printf.log"
+        self.configure(RISCV64_PORT, "riscv64", elf_path, output_path, env_override)
+
+        try:
+            start = self.run_cli("start", env_override=env_override)
+            self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
+            save = self.run_cli("save", env_override=env_override)
+            self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
+
+            content = output_path.read_text(encoding="utf-8")
+            self.assert_printf_trace(content, "gdb-qemu-riscv")
         finally:
             self.run_cli("stop", env_override=env_override)
 
