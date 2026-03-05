@@ -74,6 +74,49 @@ class QemuArmBackendTest(unittest.TestCase):
         self.assertEqual(self.run_cli("set-output", str(output_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-mode", mode).returncode, 0)
 
+    def strip_program(self, elf_path: Path) -> Path:
+        stripped_path = elf_path.with_name(f"{elf_path.name}_stripped")
+        result = subprocess.run(
+            [
+                "arm-linux-gnueabihf-strip",
+                "--strip-all",
+                "-o",
+                str(stripped_path),
+                str(elf_path),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        return stripped_path
+
+    def compile_stripped_program(self, source_name: str, arch: str) -> Path:
+        source_path = PROGRAMS_DIR / source_name
+        start_path = PROGRAMS_DIR / "arm32_start.S"
+        output_path = self.state_dir / f"{source_name.replace('.c', '')}_{arch}_nosym"
+        result = subprocess.run(
+            [
+                "arm-linux-gnueabihf-gcc",
+                "-g",
+                "-O0",
+                "-fno-omit-frame-pointer",
+                "-nostdlib",
+                "-static",
+                "-Wl,-e,_start",
+                *ARCH_FLAGS[arch],
+                str(start_path),
+                str(source_path),
+                "-o",
+                str(output_path),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        return self.strip_program(output_path)
+
     def test_qemu_backend_captures_basic_samples_for_all_arm_variants(self) -> None:
         for arch, source_name in {
             "arm32": "arm32_sample.c",
@@ -141,6 +184,36 @@ class QemuArmBackendTest(unittest.TestCase):
         result = self.run_cli("start")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error: gdb-qemu-arm backend supports only arm32, thumb, thumb2", result.stdout)
+
+    def test_qemu_backend_captures_inst_trace_for_stripped_arm32_elf(self) -> None:
+        elf_path = self.compile_stripped_program("arm32_sample.c", "arm32")
+        output_path = self.state_dir / "arm32_stripped.log"
+        self.configure("arm32", elf_path, output_path, "inst")
+
+        start = self.run_cli("start")
+        self.assertEqual(start.returncode, 0, msg=start.stdout)
+        save = self.run_cli("save")
+        self.assertEqual(save.returncode, 0, msg=save.stdout)
+
+        content = output_path.read_text(encoding="utf-8")
+        self.assertIn("backend=gdb-qemu-arm", content)
+        self.assertNotIn("call ", content)
+        self.assertNotIn("ret ", content)
+        instruction_lines = [line for line in content.splitlines() if line.startswith("0x")]
+        self.assertGreaterEqual(len(instruction_lines), 5)
+        self.run_cli("stop")
+
+    def test_qemu_backend_rejects_call_trace_for_stripped_arm32_elf(self) -> None:
+        elf_path = self.compile_stripped_program("arm32_sample.c", "arm32")
+        output_path = self.state_dir / "arm32_stripped_both.log"
+        self.configure("arm32", elf_path, output_path, "both")
+
+        result = self.run_cli("start")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "error: ELF without main symbol supports only inst mode in real backends",
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":

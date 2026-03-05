@@ -15,6 +15,7 @@
 - 已完成第八批代码：`arm32` / `thumb` / `thumb2` 的真实 QEMU gdb stub 调试链路。
 - 已完成第九批代码：`riscv32` / `riscv64` 的真实 QEMU gdb stub 调试链路。
 - 已完成第十批代码：更贴近真实场景的 qemu-user 用户态程序与调试测试。
+- 已完成第十一批代码：无符号 ELF 的地址级指令流采集支持。
 
 ## 已完成内容
 
@@ -50,6 +51,9 @@
 - 已新增 `test_programs/riscv32_complex.c`、`riscv64_complex.c` 两个 RISC-V 复杂样例源码。
 - 已新增 `test_programs/userspace_qemu_app.c`，作为更贴近真实场景的用户态程序样例，覆盖动态链接、`libc` 调用、字符串处理和格式化。
 - 已新增 `tests/test_qemu_user_userspace_apps.py`，用于验证 ARM 与 `riscv64` 在 `qemu-user` 用户态程序场景下的真实 trace 行为。
+- 已新增 `test_programs/aarch64_start.S` 与 `test_programs/arm32_start.S`，用于构建无 `main` 符号的最小入口 ELF，验证 stripped ELF 场景。
+- 已实现真实 backend 的无 `main` 符号退化逻辑：允许 `inst` 模式做地址级指令流采集，拒绝 `call` / `both` 模式。
+- 已新增 stripped ELF 真实场景自动化测试，覆盖 `gdb-native` `aarch64` 与 `gdb-qemu-arm` `arm32` 两条链路。
 
 ## 当前验证状态
 
@@ -89,19 +93,18 @@
 - 已在 Docker 容器 `ubuntu` 中完成带 `libc` 调用的 ARM 与 `riscv64` 用户态程序 `qemu-user` 自动化测试。
 - 已在 Docker 容器 `ubuntu` 中以手工 CLI 流程完成动态链接 `arm32` 用户态程序的 `set-* -> start -> save -> stop` 验证，并确认 trace 中出现业务函数与 `strlen@plt` 等用户态调用边界。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 30 项自动化测试全部通过。
+- 已在 Docker 容器 `ubuntu` 中完成 stripped ELF 自动化测试，确认 `gdb-native` `aarch64` 与 `gdb-qemu-arm` `arm32` 在无 `main` 符号时可输出地址级 `inst` trace，并在 `call` / `both` 模式下明确报错。
+- 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 34 项自动化测试全部通过。
 
 ## 下一步
 
 1. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
-2. 将真实采集后端与静态样例后端的选择方式整理成更明确的接口或配置，避免后续接入 `SkyEye` 时继续依赖环境变量命名约定。
-3. 评估并实现基于远程 GDB stub 的通用后端抽象，为后续接入 `SkyEye` 远程目标做准备。
-4. 在现有基础样例、复杂样例和用户态程序样例之外，继续补充更深递归、更长循环和更复杂间接调用的对拍样例。
-5. 开始规划 `SkyEye` 远程目标适配所需的连接、停止条件和断连恢复处理。
+2. 为 `riscv32` / `riscv64` 补齐无 `main` 符号 ELF 的真实自动化测试，统一各架构退化行为。
+3. 继续扩展更大规模的用户态和复杂 ELF 样例，补强长指令流与复杂调用图回归。
+4. 开始规划 `SkyEye` 远程目标适配所需的连接、停止条件和断连恢复处理。
 
 ## 已知阻塞或风险
 
-- 当前尚无代码目录结构，后续实现时需要先确定最小工程骨架。
-- 当前日志已支持真实 `aarch64` 与 ARM32 系采集，但默认后端仍是静态样例，尚未切换为面向真实目标的统一默认行为。
 - 当前日志已支持真实 `aarch64`、ARM32 系与 RISC-V 系采集，但默认后端仍是静态样例，尚未切换为面向真实目标的统一默认行为。
 - `SkyEye` 远程目标尚未接入，当前真实场景仅覆盖容器内原生 `gdb`、`qemu-arm` gdb stub 与 `qemu-riscv` gdb stub。
 - 基础样例和复杂样例已经落地，但更大规模的对拍样例和预期调用图资料仍需继续补充。

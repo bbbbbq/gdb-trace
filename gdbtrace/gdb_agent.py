@@ -9,6 +9,7 @@ import gdb
 
 
 INSTRUCTION_RE = re.compile(r"(?:=>\s*)?(0x[0-9a-fA-F]+)(?:\s+<[^>]+>)?:\s*(.*)")
+ENTRY_RE = re.compile(r"Entry point:\s*(0x[0-9a-fA-F]+)")
 
 
 def _relevant_stack() -> list[str]:
@@ -47,6 +48,14 @@ def _common_prefix_size(left: list[str], right: list[str]) -> int:
     return common
 
 
+def _entry_point() -> str:
+    info = gdb.execute("info files", to_string=True)
+    match = ENTRY_RE.search(info)
+    if not match:
+        raise RuntimeError("failed to determine ELF entry point")
+    return match.group(1).lower()
+
+
 def _emit_call_events(events: list[dict[str, object]], stack: list[str]) -> None:
     for depth, function in enumerate(stack):
         events.append({"kind": "call", "depth": depth, "function": function, "pc": "", "instruction": ""})
@@ -80,11 +89,42 @@ def _emit_stack_transition(
         )
 
 
+def _step_until_exit(max_steps: int, events: list[dict[str, object]]) -> int:
+    steps = 0
+    while steps < max_steps:
+        try:
+            pc, instruction = _current_instruction()
+        except gdb.error as exc:
+            if "No registers" in str(exc):
+                break
+            raise
+        events.append(
+            {
+                "kind": "inst",
+                "depth": 0,
+                "function": "",
+                "pc": pc,
+                "instruction": instruction,
+            }
+        )
+        steps += 1
+
+        try:
+            gdb.execute("stepi")
+        except gdb.error as exc:
+            message = str(exc)
+            if "exited" not in message and "Inferior" not in message and "program is not being run" not in message:
+                raise
+            break
+    return steps
+
+
 def run() -> None:
     elf = os.environ["GDBTRACE_GDB_ELF"]
     output_path = Path(os.environ["GDBTRACE_GDB_OUTPUT"])
     max_steps = int(os.environ.get("GDBTRACE_GDB_MAX_STEPS", "4096"))
     transport = os.environ.get("GDBTRACE_GDB_TRANSPORT", "native")
+    symbol_mode = os.environ.get("GDBTRACE_GDB_SYMBOL_MODE", "main")
 
     gdb.execute("set pagination off")
     gdb.execute("set confirm off")
@@ -98,17 +138,29 @@ def run() -> None:
         if sysroot:
             gdb.execute(f'set sysroot "{sysroot}"')
         gdb.execute(f"target remote {target}")
-        gdb.execute("tbreak main")
-        gdb.execute("continue")
+        if symbol_mode == "main":
+            gdb.execute("tbreak main")
+            gdb.execute("continue")
     else:
-        gdb.execute("tbreak main")
-        gdb.execute("run")
+        if symbol_mode == "main":
+            gdb.execute("tbreak main")
+            gdb.execute("run")
+        else:
+            gdb.execute(f"tbreak *{_entry_point()}")
+            gdb.execute("run")
+
+    events: list[dict[str, object]] = []
+    if symbol_mode == "entry":
+        steps = _step_until_exit(max_steps, events)
+        if steps >= max_steps:
+            raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
+        output_path.write_text(json.dumps(events, indent=2), encoding="utf-8")
+        return
 
     stack = _relevant_stack()
     if not stack:
         raise RuntimeError("failed to stop in main")
 
-    events: list[dict[str, object]] = []
     _emit_call_events(events, stack)
 
     steps = 0

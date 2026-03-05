@@ -46,6 +46,25 @@ class StaticSampleCaptureBackend(CaptureBackend):
         )
 
 
+def _has_main_symbol(elf_path: Path) -> bool:
+    for command in (["readelf", "-Ws", str(elf_path)], ["nm", "-a", str(elf_path)]):
+        try:
+            result = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+            )
+        except FileNotFoundError:
+            continue
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            columns = line.split()
+            if columns and columns[-1] == "main":
+                return True
+    return False
+
+
 class NativeGdbCaptureBackend(CaptureBackend):
     name = "gdb-native"
 
@@ -56,6 +75,9 @@ class NativeGdbCaptureBackend(CaptureBackend):
         elf_path = Path(request.elf)
         if not elf_path.exists():
             raise GdbTraceError(f"elf file does not exist: {request.elf}")
+        has_main_symbol = _has_main_symbol(elf_path)
+        if request.mode != "inst" and not has_main_symbol:
+            raise GdbTraceError("ELF without main symbol supports only inst mode in real backends")
 
         repo_root = Path(__file__).resolve().parents[1]
         with NamedTemporaryFile("w+", suffix=".json", delete=False) as handle:
@@ -69,6 +91,7 @@ class NativeGdbCaptureBackend(CaptureBackend):
         env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
         env["GDBTRACE_GDB_ELF"] = str(elf_path.resolve())
         env["GDBTRACE_GDB_OUTPUT"] = str(output_path)
+        env["GDBTRACE_GDB_SYMBOL_MODE"] = "main" if has_main_symbol else "entry"
         env.setdefault("GDBTRACE_GDB_MAX_STEPS", "4096")
 
         command = [
@@ -117,6 +140,9 @@ class QemuRemoteCaptureBackend(CaptureBackend):
         elf_path = Path(request.elf)
         if not elf_path.exists():
             raise GdbTraceError(f"elf file does not exist: {request.elf}")
+        has_main_symbol = _has_main_symbol(elf_path)
+        if request.mode != "inst" and not has_main_symbol:
+            raise GdbTraceError("ELF without main symbol supports only inst mode in real backends")
 
         host, _, port_text = request.target.rpartition(":")
         if host not in {"127.0.0.1", "localhost"}:
@@ -152,6 +178,7 @@ class QemuRemoteCaptureBackend(CaptureBackend):
             env["GDBTRACE_GDB_TARGET"] = request.target
             env["GDBTRACE_GDB_TRANSPORT"] = "remote"
             env["GDBTRACE_GDB_SYSROOT"] = sysroot
+            env["GDBTRACE_GDB_SYMBOL_MODE"] = "main" if has_main_symbol else "entry"
             env.setdefault("GDBTRACE_GDB_MAX_STEPS", "8192")
 
             command = [
