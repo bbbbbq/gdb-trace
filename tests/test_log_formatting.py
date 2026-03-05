@@ -16,6 +16,7 @@ class LogFormattingTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.state_dir = Path(self.temp_dir.name)
         self.output_path = self.state_dir / "trace.log"
+        self.call_output_path = self.state_dir / "trace.call.log"
         self.env = os.environ.copy()
         self.env["PYTHONPATH"] = str(REPO_ROOT)
         self.env["GDBTRACE_SESSION_FILE"] = str(self.state_dir / "session.json")
@@ -65,12 +66,17 @@ class LogFormattingTest(unittest.TestCase):
         self.configure("both")
         self.assertEqual(self.run_cli("stop").returncode, 0)
         content = self.output_path.read_text(encoding="utf-8")
+        call_content = self.call_output_path.read_text(encoding="utf-8")
         self.assertIn("\x1b[32mcall main\x1b[0m", content)
         self.assertIn("    0x400580 stp x29, x30, [sp, #-16]!", content)
         self.assertIn("    \x1b[32mcall func_a\x1b[0m", content)
         self.assertIn("        0x4005a8 sub sp, sp, #0x10", content)
         self.assertIn("        \x1b[32mcall func_b\x1b[0m", content)
         self.assertIn("        \x1b[31mret func_b\x1b[0m", content)
+        self.assertIn("trace_mode=call", call_content)
+        self.assertIn("\x1b[32mcall main\x1b[0m", call_content)
+        self.assertIn("    \x1b[32mcall func_a\x1b[0m", call_content)
+        self.assertNotIn("0x400580 stp x29, x30, [sp, #-16]!", call_content)
 
 
 if __name__ == "__main__":

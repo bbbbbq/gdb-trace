@@ -16,6 +16,7 @@ class LogMetadataTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.state_dir = Path(self.temp_dir.name)
         self.output_path = self.state_dir / "trace.log"
+        self.call_output_path = self.state_dir / "trace.call.log"
         self.env = os.environ.copy()
         self.env["PYTHONPATH"] = str(REPO_ROOT)
         self.env["GDBTRACE_SESSION_FILE"] = str(self.state_dir / "session.json")
@@ -43,7 +44,12 @@ class LogMetadataTest(unittest.TestCase):
         self.assertEqual(self.run_cli("start", "--filter-func", "func_b").returncode, 0)
         self.assertEqual(self.run_cli("save").returncode, 0)
         content = self.output_path.read_text(encoding="utf-8")
+        call_content = self.call_output_path.read_text(encoding="utf-8")
         self.assertIn("[capture] backend=static events=4", content)
+        self.assertIn("[output] path=", content)
+        self.assertIn(str(self.output_path), content)
+        self.assertIn("trace_mode=call", call_content)
+        self.assertIn(str(self.call_output_path), call_content)
 
 
 if __name__ == "__main__":

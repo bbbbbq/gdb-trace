@@ -150,10 +150,32 @@ def _resolve_target(paths: Paths, explicit_target: str | None) -> str:
     raise GdbTraceError("remote target is not configured")
 
 
-def _write_log_snapshot(runtime: dict[str, object], snapshot_kind: str) -> None:
+def _derived_call_output_path(output_path: Path) -> Path:
+    return output_path.with_name(f"{output_path.stem}.call.log")
+
+
+def _log_targets(runtime: dict[str, object]) -> list[tuple[Path, str]]:
     output_path = Path(runtime["config"]["output"])
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_log(runtime, snapshot_kind), encoding="utf-8")
+    mode = runtime["config"]["mode"]
+    if mode == "both":
+        return [
+            (output_path, "both"),
+            (_derived_call_output_path(output_path), "call"),
+        ]
+    return [(output_path, mode)]
+
+
+def _write_log_snapshot(runtime: dict[str, object], snapshot_kind: str) -> None:
+    for output_path, mode in _log_targets(runtime):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            render_log(runtime, snapshot_kind, mode=mode, output_path=str(output_path)),
+            encoding="utf-8",
+        )
+
+
+def _snapshot_output_message(runtime: dict[str, object]) -> str:
+    return ", ".join(str(path) for path, _ in _log_targets(runtime))
 
 
 def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
@@ -230,7 +252,7 @@ def cmd_save(_: argparse.Namespace, paths: Paths) -> int:
     if runtime.get("status") not in {"running", "paused"}:
         raise GdbTraceError("no active trace to save")
     _write_log_snapshot(runtime, "snapshot")
-    print(f"trace saved to {runtime['config']['output']}")
+    print(f"trace saved to {_snapshot_output_message(runtime)}")
     return 0
 
 
@@ -239,8 +261,9 @@ def cmd_stop(_: argparse.Namespace, paths: Paths) -> int:
     if runtime.get("status") not in {"running", "paused"}:
         raise GdbTraceError("no active trace to stop")
     _write_log_snapshot(runtime, "final")
+    output_message = _snapshot_output_message(runtime)
     clear_file(paths.runtime_file)
-    print(f"trace stopped and saved to {runtime['config']['output']}")
+    print(f"trace stopped and saved to {output_message}")
     return 0
 
 

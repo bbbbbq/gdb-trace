@@ -10,14 +10,19 @@ ANSI_RESET = "\x1b[0m"
 INDENT = " " * 4
 
 
-def render_log_header(runtime: dict[str, object], snapshot_kind: str) -> list[str]:
+def render_log_header(
+    runtime: dict[str, object],
+    snapshot_kind: str,
+    render_mode: str,
+    output_path: str,
+) -> list[str]:
     config = runtime["config"]
     filters = runtime["filters"]
     lines = [
         f"{ANSI_CYAN}[trace {snapshot_kind}]{ANSI_RESET} "
         f"target={runtime['target']} arch={config['arch']} elf={config['elf']} "
-        f"trace_mode={config['mode']} status={runtime['status']} start_time={runtime['started_at']}",
-        f"[output] path={config['output']}",
+        f"trace_mode={render_mode} status={runtime['status']} start_time={runtime['started_at']}",
+        f"[output] path={output_path}",
         f"[capture] backend={runtime['capture_backend']} events={runtime['event_count']}",
     ]
     if filters.get("start"):
@@ -57,14 +62,15 @@ def format_both(events: list[TraceEvent]) -> list[str]:
     return lines
 
 
-def render_log(runtime: dict[str, object], snapshot_kind: str) -> str:
-    mode = runtime["config"]["mode"]
+def render_log(runtime: dict[str, object], snapshot_kind: str, mode: str | None = None, output_path: str | None = None) -> str:
+    render_mode = mode or runtime["config"]["mode"]
+    render_output_path = output_path or runtime["config"]["output"]
     events = [TraceEvent(**event) for event in runtime["events"]]
-    lines = render_log_header(runtime, snapshot_kind)
+    lines = render_log_header(runtime, snapshot_kind, render_mode, render_output_path)
     lines.append("")
-    if mode == "inst":
+    if render_mode == "inst":
         lines.extend(format_inst(events))
-    elif mode == "call":
+    elif render_mode == "call":
         lines.extend(format_call(events))
     else:
         lines.extend(format_both(events))

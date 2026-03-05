@@ -16,6 +16,7 @@ class CliLifecycleTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.state_dir = Path(self.temp_dir.name)
         self.output_path = self.state_dir / "trace.log"
+        self.call_output_path = self.state_dir / "trace.call.log"
         self.env = os.environ.copy()
         self.env["PYTHONPATH"] = str(REPO_ROOT)
         self.env["GDBTRACE_SESSION_FILE"] = str(self.state_dir / "session.json")
@@ -70,15 +71,20 @@ class CliLifecycleTest(unittest.TestCase):
 
         saved = self.run_cli("save")
         self.assertEqual(saved.returncode, 0)
-        self.assertIn(f"trace saved to {self.output_path}", saved.stdout)
+        self.assertIn(f"trace saved to {self.output_path}, {self.call_output_path}", saved.stdout)
         self.assertTrue(self.output_path.exists())
+        self.assertTrue(self.call_output_path.exists())
         save_content = self.output_path.read_text(encoding="utf-8")
         self.assertIn("[trace snapshot]", save_content)
         self.assertIn("trace_mode=both", save_content)
+        call_save_content = self.call_output_path.read_text(encoding="utf-8")
+        self.assertIn("trace_mode=call", call_save_content)
+        self.assertIn("\x1b[32mcall main\x1b[0m", call_save_content)
+        self.assertNotIn("0x400580 stp x29, x30, [sp, #-16]!", call_save_content)
 
         stopped = self.run_cli("stop")
         self.assertEqual(stopped.returncode, 0)
-        self.assertIn(f"trace stopped and saved to {self.output_path}", stopped.stdout)
+        self.assertIn(f"trace stopped and saved to {self.output_path}, {self.call_output_path}", stopped.stdout)
         stop_content = self.output_path.read_text(encoding="utf-8")
         self.assertIn("[trace final]", stop_content)
         self.assertIn("\x1b[32mcall main\x1b[0m", stop_content)

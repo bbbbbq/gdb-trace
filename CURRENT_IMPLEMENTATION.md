@@ -16,6 +16,7 @@
 - 已完成第九批代码：`riscv32` / `riscv64` 的真实 QEMU gdb stub 调试链路。
 - 已完成第十批代码：更贴近真实场景的 qemu-user 用户态程序与调试测试。
 - 已完成第十一批代码：无符号 ELF 的地址级指令流采集支持。
+- 已完成第十二批代码：`both` 模式双日志输出。
 
 ## 已完成内容
 
@@ -54,6 +55,7 @@
 - 已新增 `test_programs/aarch64_start.S` 与 `test_programs/arm32_start.S`，用于构建无 `main` 符号的最小入口 ELF，验证 stripped ELF 场景。
 - 已实现真实 backend 的无 `main` 符号退化逻辑：允许 `inst` 模式做地址级指令流采集，拒绝 `call` / `both` 模式。
 - 已新增 stripped ELF 真实场景自动化测试，覆盖 `gdb-native` `aarch64` 与 `gdb-qemu-arm` `arm32` 两条链路。
+- 已实现 `both` 模式双日志输出：原 `set-output` 路径保存层级化 `both` 日志，并派生 `<stem>.call.log` 保存纯函数调用序列日志。
 
 ## 当前验证状态
 
@@ -95,6 +97,9 @@
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 30 项自动化测试全部通过。
 - 已在 Docker 容器 `ubuntu` 中完成 stripped ELF 自动化测试，确认 `gdb-native` `aarch64` 与 `gdb-qemu-arm` `arm32` 在无 `main` 符号时可输出地址级 `inst` trace，并在 `call` / `both` 模式下明确报错。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 34 项自动化测试全部通过。
+- 已在 Docker 容器 `ubuntu` 中完成 `both` 双日志输出验证，确认主日志保留层级化 `both` 内容，派生 `<stem>.call.log` 仅保留调用序列。
+- 已在 Docker 容器 `ubuntu` 中于 2026-03-06 再次执行 `python3 -m unittest discover -s tests -v`，当前 34 项自动化测试全部通过。
+- 已在 Docker 容器 `ubuntu` 中完成 `both` 双日志输出自动化测试，覆盖生命周期、格式和元数据。
 
 ## 下一步
 

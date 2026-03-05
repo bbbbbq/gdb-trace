@@ -80,12 +80,14 @@
 - 输出路径约定为 `.log` 文件。
 - 日志文件内容为人类可读文本，不再要求 `JSONL` 结构化输出。
 - ANSI 颜色码直接写入 log 文件，用于区分 `call`、`ret` 和普通指令行。
+- 当 `set-mode both` 时，`set-output` 指定的路径保存 `both` 主日志，并额外生成一份同目录的 `call` 日志，命名为 `<原文件名 stem>.call.log`。
 
 `set-mode` 语义：
 
 - `inst`：仅输出纯指令流，不带任何函数调用附加信息；单行格式固定为 `PC + 空格 + 指令`。
 - `call`：仅输出函数调用序列，使用 4 个空格缩进表示嵌套；单行格式固定为 `call <func>` 或 `ret <func>`。
 - `both`：输出带函数层级的指令流，格式为 `call/ret + PC + 指令`，统一按每层 4 个空格缩进。
+- `both`：除主 `both` 日志外，还会额外生成一份 `call` 日志，便于单独查看函数调用序列。
 
 自定义指令语义：
 
@@ -109,6 +111,7 @@
 - 若存在缺失项，`start` 直接失败，并一次性列出全部缺失项。
 - `pause`、`save`、`stop` 不接受新的 trace 配置参数。
 - `save` 不接受新的输出路径，始终写回 `set-output` 设置的原始路径。
+- `set-mode both` 时，`save` / `stop` 会同时写回主 `both` 日志和派生的 `call` 日志。
 
 错误示例：
 
@@ -121,6 +124,7 @@ error: missing required trace config: arch, elf, output, mode
 - `inst` 模式仅保留 `PC + 指令`，不包含序号字段、`opcode=...`、`disasm=`、`arch_mode`、`symbol`。
 - `call` 模式仅保留 `call <func>` 和 `ret <func>`，通过每层 4 个空格表示函数嵌套。
 - `both` 模式为两者结合：`call/ret` 行沿用 `call` 模式，指令行沿用 `inst` 模式，并显示在所属函数层级下。
+- `both` 模式落盘为两份 `.log` 文件：原始 `set-output` 路径保存 `both` 内容，派生的 `<stem>.call.log` 保存 `call` 内容。
 - ANSI 颜色码直接写入日志文件，用于区分 `call`、`ret` 和普通指令行。
 - 日志头保留 `target`、`arch`、`elf`、`start_time`、`trace_mode` 等会话元数据。
 
@@ -212,6 +216,7 @@ ret main
 - 无 `main` 符号 ELF 场景：确认真实 backend 在 `call` / `both` 模式下明确报错，而不是伪造函数调用层级。
 - `call` 模式：确认仅输出 `call/ret` 行，且每层嵌套固定缩进 4 个空格。
 - `both` 模式：确认 `call/ret` 与指令行组合输出，且两者都遵循统一的 4 个空格层级缩进。
+- `both` 模式：确认会生成两份 `.log` 文件，其中主日志包含 `call/ret + 指令`，派生 `call` 日志仅包含函数调用序列。
 - `set-arch`、`set-elf`、`set-output`、`set-mode` 后：`show-config` 能正确显示当前值。
 - 执行 `clear-arch`、`clear-elf`、`clear-output`、`clear-mode` 后：`show-config` 不再显示对应值。
 - 未配置任何项时执行 `start`：一次性报出缺失的 `arch`、`elf`、`output`、`mode`。
