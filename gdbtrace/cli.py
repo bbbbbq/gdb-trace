@@ -174,8 +174,8 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
         raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
 
     target = _resolve_target(paths, args.target)
-    backend_name, backend = resolve_capture_backend()
-    source_events = backend.capture(
+    backend = resolve_capture_backend()
+    capture_result = backend.capture(
         CaptureRequest(
             arch=session["arch"],
             mode=session["mode"],
@@ -184,7 +184,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
         )
     )
     filtered_events = apply_filters(
-        source_events,
+        capture_result.events,
         start=args.start_addr or "",
         stop=args.stop_addr or "",
         filter_func=args.filter_func or "",
@@ -200,7 +200,8 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             "output": session["output"],
             "mode": session["mode"],
         },
-        "capture_backend": backend_name,
+        "capture_backend": capture_result.backend,
+        "event_count": len(filtered_events),
         "filters": {
             "start": args.start_addr or "",
             "stop": args.stop_addr or "",

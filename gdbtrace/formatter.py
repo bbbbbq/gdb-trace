@@ -18,6 +18,7 @@ def render_log_header(runtime: dict[str, object], snapshot_kind: str) -> list[st
         f"target={runtime['target']} arch={config['arch']} elf={config['elf']} "
         f"trace_mode={config['mode']} status={runtime['status']} start_time={runtime['started_at']}",
         f"[output] path={config['output']}",
+        f"[capture] backend={runtime['capture_backend']} events={runtime['event_count']}",
     ]
     if filters.get("start"):
         lines.append(f"[range] start={filters['start']}")

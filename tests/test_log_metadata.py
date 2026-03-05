@@ -11,7 +11,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-class CaptureBackendTest(unittest.TestCase):
+class LogMetadataTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.state_dir = Path(self.temp_dir.name)
@@ -25,37 +25,25 @@ class CaptureBackendTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def run_cli(self, *args: str, env_override: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-        env = dict(self.env)
-        if env_override:
-            env.update(env_override)
+    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, "-m", "gdbtrace", *args],
             cwd=REPO_ROOT,
-            env=env,
+            env=self.env,
             text=True,
             capture_output=True,
         )
 
-    def configure(self) -> None:
+    def test_log_header_includes_capture_backend_and_event_count(self) -> None:
         self.assertEqual(self.run_cli("set-target", "127.0.0.1:1234").returncode, 0)
         self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-mode", "both").returncode, 0)
-
-    def test_start_uses_default_static_backend(self) -> None:
-        self.configure()
-        self.assertEqual(self.run_cli("start").returncode, 0)
-        runtime_payload = Path(self.env["GDBTRACE_RUNTIME_FILE"]).read_text(encoding="utf-8")
-        self.assertIn('"capture_backend": "static"', runtime_payload)
-        self.assertIn('"event_count": 14', runtime_payload)
-
-    def test_start_rejects_unknown_backend(self) -> None:
-        self.configure()
-        result = self.run_cli("start", env_override={"GDBTRACE_CAPTURE_BACKEND": "gdb"})
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("error: unsupported capture backend: gdb", result.stdout)
+        self.assertEqual(self.run_cli("start", "--filter-func", "func_b").returncode, 0)
+        self.assertEqual(self.run_cli("save").returncode, 0)
+        content = self.output_path.read_text(encoding="utf-8")
+        self.assertIn("[capture] backend=static events=4", content)
 
 
 if __name__ == "__main__":
