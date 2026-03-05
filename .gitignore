@@ -1,0 +1,5 @@
+.gdbtrace_session.json
+.gdbtrace_runtime.json
+__pycache__/
+*.pyc
+*.log
