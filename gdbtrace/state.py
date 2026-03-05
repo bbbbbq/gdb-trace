@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 
-ARCH_CHOICES = ("thumb", "thumb2", "arm32", "aarch64")
+ARCH_CHOICES = ("thumb", "thumb2", "arm32", "aarch64", "riscv32", "riscv64")
 MODE_CHOICES = ("inst", "call", "both")
 
 

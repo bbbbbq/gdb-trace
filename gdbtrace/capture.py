@@ -100,28 +100,35 @@ class NativeGdbCaptureBackend(CaptureBackend):
             output_path.unlink(missing_ok=True)
 
 
-class QemuArmRemoteCaptureBackend(CaptureBackend):
-    name = "gdb-qemu-arm"
+class QemuRemoteCaptureBackend(CaptureBackend):
+    qemu_bin_by_arch: dict[str, str] = {}
+    supported_archs: tuple[str, ...] = ()
+    default_sysroot = ""
+    error_label = "qemu"
+
+    def _validate_arch(self, request: CaptureRequest) -> None:
+        if request.arch not in self.supported_archs:
+            raise GdbTraceError(
+                f"{self.name} backend supports only {', '.join(self.supported_archs)}"
+            )
 
     def capture(self, request: CaptureRequest) -> CaptureResult:
-        if request.arch not in {"arm32", "thumb", "thumb2"}:
-            raise GdbTraceError("gdb-qemu-arm backend supports only arm32, thumb, thumb2")
-
+        self._validate_arch(request)
         elf_path = Path(request.elf)
         if not elf_path.exists():
             raise GdbTraceError(f"elf file does not exist: {request.elf}")
 
         host, _, port_text = request.target.rpartition(":")
         if host not in {"127.0.0.1", "localhost"}:
-            raise GdbTraceError("gdb-qemu-arm backend requires a local target host")
+            raise GdbTraceError(f"{self.name} backend requires a local target host")
         port = int(port_text)
-        sysroot = os.environ.get("GDBTRACE_QEMU_ARM_SYSROOT", "/usr/arm-linux-gnueabihf")
+        sysroot = os.environ.get(self._sysroot_env_var(), self.default_sysroot)
 
         repo_root = Path(__file__).resolve().parents[1]
         with NamedTemporaryFile("w+", suffix=".json", delete=False) as handle:
             output_path = Path(handle.name)
 
-        qemu_command = ["qemu-arm", "-g", str(port)]
+        qemu_command = [self.qemu_bin_by_arch[request.arch], "-g", str(port)]
         if sysroot:
             qemu_command.extend(["-L", sysroot])
         qemu_command.append(str(elf_path.resolve()))
@@ -157,7 +164,7 @@ class QemuArmRemoteCaptureBackend(CaptureBackend):
             result = self._run_gdb_with_retry(command, env)
             if result.returncode != 0:
                 error_output = (result.stderr or result.stdout).strip()
-                raise GdbTraceError(f"gdb-qemu-arm backend failed: {error_output}")
+                raise GdbTraceError(f"{self.name} backend failed: {error_output}")
 
             raw_events = json.loads(output_path.read_text(encoding="utf-8"))
             events = [TraceEvent(**event) for event in raw_events]
@@ -183,11 +190,11 @@ class QemuArmRemoteCaptureBackend(CaptureBackend):
                 stderr = ""
                 if process.stderr is not None:
                     stderr = process.stderr.read().strip()
-                raise GdbTraceError(f"qemu-arm exited before gdb attached: {stderr}")
+                raise GdbTraceError(f"{self.error_label} exited before gdb attached: {stderr}")
             if self._port_is_listening(host, port):
                 return
             time.sleep(0.1)
-        raise GdbTraceError("timed out waiting for qemu-arm gdb stub")
+        raise GdbTraceError(f"timed out waiting for {self.error_label} gdb stub")
 
     def _port_is_listening(self, host: str, port: int) -> bool:
         del host
@@ -227,6 +234,32 @@ class QemuArmRemoteCaptureBackend(CaptureBackend):
         assert last_result is not None
         return last_result
 
+    def _sysroot_env_var(self) -> str:
+        return f"GDBTRACE_{self.name.upper().replace('-', '_')}_SYSROOT"
+
+
+class QemuArmRemoteCaptureBackend(QemuRemoteCaptureBackend):
+    name = "gdb-qemu-arm"
+    supported_archs = ("arm32", "thumb", "thumb2")
+    qemu_bin_by_arch = {
+        "arm32": "qemu-arm",
+        "thumb": "qemu-arm",
+        "thumb2": "qemu-arm",
+    }
+    default_sysroot = "/usr/arm-linux-gnueabihf"
+    error_label = "qemu-arm"
+
+
+class QemuRiscvRemoteCaptureBackend(QemuRemoteCaptureBackend):
+    name = "gdb-qemu-riscv"
+    supported_archs = ("riscv32", "riscv64")
+    qemu_bin_by_arch = {
+        "riscv32": "qemu-riscv32",
+        "riscv64": "qemu-riscv64",
+    }
+    default_sysroot = ""
+    error_label = "qemu-riscv"
+
 
 def resolve_capture_backend() -> CaptureBackend:
     backend_name = os.environ.get("GDBTRACE_CAPTURE_BACKEND", "static")
@@ -236,4 +269,6 @@ def resolve_capture_backend() -> CaptureBackend:
         return NativeGdbCaptureBackend()
     if backend_name == "gdb-qemu-arm":
         return QemuArmRemoteCaptureBackend()
+    if backend_name == "gdb-qemu-riscv":
+        return QemuRiscvRemoteCaptureBackend()
     raise GdbTraceError(f"unsupported capture backend: {backend_name}")

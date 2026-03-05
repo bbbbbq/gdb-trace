@@ -7,7 +7,7 @@
 当前阶段以需求设计为主，核心目标见 [README.md](/Users/caojunze424/code/gdb_trace/README.md)：
 
 - 面向 `SkyEye` 远程调试场景
-- 支持 `thumb`、`thumb2`、`arm32`、`aarch64`
+- 支持 `thumb`、`thumb2`、`arm32`、`aarch64`、`riscv32`、`riscv64`
 - 记录指令流与函数调用序列
 - 输出彩色 `.log` 文件
 - CLI 采用“预配置 + start 校验”的交互模型

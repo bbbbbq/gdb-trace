@@ -48,6 +48,8 @@ class ArchitectureSampleTest(unittest.TestCase):
             "arm32": "0x00010480 push {r11, lr}",
             "thumb": "0x00010481 push {r7, lr}",
             "thumb2": "0x00020481 push.w {r4, r7, lr}",
+            "riscv32": "0x0001018c addi sp,sp,-16",
+            "riscv64": "0x000000000001017c addi sp,sp,-32",
         }
         for arch, first_line in expectations.items():
             with self.subTest(arch=arch):
@@ -57,12 +59,15 @@ class ArchitectureSampleTest(unittest.TestCase):
                 self.assertEqual(self.run_cli("save").returncode, 0)
                 content = output_path.read_text(encoding="utf-8")
                 self.assertIn(first_line, content)
-                self.assertIn("0x00010484 bl func_a", content)
+                if arch in {"arm32", "thumb", "thumb2"}:
+                    self.assertIn("0x00010484 bl func_a", content)
+                else:
+                    self.assertIn("jal ra,func_a", content)
                 self.assertNotIn("call main", content)
                 self.run_cli("stop")
 
     def test_call_mode_outputs_nested_calls_for_each_arch(self) -> None:
-        for arch in ("arm32", "thumb", "thumb2"):
+        for arch in ("arm32", "thumb", "thumb2", "riscv32", "riscv64"):
             with self.subTest(arch=arch):
                 output_path = self.output_path_for(arch, "call")
                 self.configure(arch, "call", output_path)

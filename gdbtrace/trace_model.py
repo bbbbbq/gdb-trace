@@ -57,6 +57,30 @@ def sample_trace_events(arch: str) -> list[TraceEvent]:
             TraceEvent("ret", 0, "main"),
         ]
 
+    if arch in {"riscv32", "riscv64"}:
+        entry_pc = {
+            "riscv32": "0x0001018c",
+            "riscv64": "0x000000000001017c",
+        }[arch]
+        second_pc = {
+            "riscv32": "0x00010190",
+            "riscv64": "0x0000000000010180",
+        }[arch]
+        first_inst = {
+            "riscv32": "addi sp,sp,-16",
+            "riscv64": "addi sp,sp,-32",
+        }[arch]
+        return [
+            TraceEvent("call", 0, "main"),
+            TraceEvent("inst", 1, "main", entry_pc, first_inst),
+            TraceEvent("inst", 1, "main", second_pc, "jal ra,func_a"),
+            TraceEvent("call", 1, "func_a"),
+            TraceEvent("inst", 2, "func_a", "0x000101b0", "mv a0,a1"),
+            TraceEvent("inst", 2, "func_a", "0x000101b4", "ret"),
+            TraceEvent("ret", 1, "func_a"),
+            TraceEvent("ret", 0, "main"),
+        ]
+
     return [
         TraceEvent("call", 0, "main"),
         TraceEvent("inst", 1, "main", "0x0", "nop"),

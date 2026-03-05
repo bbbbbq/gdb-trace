@@ -2,14 +2,14 @@
 
 ## 项目目标
 
-`gdbtrace` 是一个面向 `SkyEye` 远程调试场景的命令行追踪工具。首版目标是在 `thumb`、`thumb2`、`arm32`、`aarch64` 四类指令集或执行态下，稳定记录指令流与函数调用序列，便于问题复现、执行路径分析和调用链定位。首版范围按“两者同优先”定义：指令级追踪与函数级追踪均为核心能力，不做二选一裁剪。
+`gdbtrace` 是一个面向 `SkyEye` 远程调试场景的命令行追踪工具。首版目标是在 `thumb`、`thumb2`、`arm32`、`aarch64`、`riscv32`、`riscv64` 六类指令集或执行态下，稳定记录指令流与函数调用序列，便于问题复现、执行路径分析和调用链定位。首版范围按“两者同优先”定义：指令级追踪与函数级追踪均为核心能力，不做二选一裁剪。
 
 ## 需求表
 
 | ID | 类别 | 需求项 | 优先级 | 验收标准 |
 |---|---|---|---|---|
 | R1 | 产品目标 | 支持当前会话目标地址配置、全局默认目标地址配置，以及按优先级自动解析远程连接地址 | Must | 当前会话已设置时优先使用当前会话地址；未设置时回退到全局默认地址；两者都未设置时输出明确错误提示 |
-| R2 | 产品目标 | 支持 `thumb`、`thumb2`、`arm32`、`aarch64` 四类指令集或执行态的追踪 | Must | 可在这四类目标程序或执行态下正确启动追踪并输出结果 |
+| R2 | 产品目标 | 支持 `thumb`、`thumb2`、`arm32`、`aarch64`、`riscv32`、`riscv64` 六类指令集或执行态的追踪 | Must | 可在这六类目标程序或执行态下正确启动追踪并输出结果 |
 | R3 | 核心功能 | 支持记录逐条指令流，并在开启函数调用序列时按函数调用层级组织指令输出 | Must | 未开启函数调用序列时，仅输出按执行顺序排列的指令流；开启后，输出中包含 `call <func>`、缩进后的函数内指令、`ret <func>`，且支持多层嵌套调用 |
 | R4 | 核心功能 | 支持记录函数调用序列 | Must | 能输出函数进入、返回、调用深度、调用关系 |
 | R5 | 核心功能 | 支持追踪开始、暂停、停止、保存 | Must | CLI 通过 `start`、`pause`、`save`、`stop` 显式控制追踪生命周期；`start` 启动前会校验必需配置；`stop` 后产出完整结果文件 |
@@ -32,7 +32,7 @@
 | R22 | 兼容性 | 与 SkyEye 远程调试流程兼容，不要求修改 SkyEye | Must | 通过标准远程调试接入即可工作，不依赖侵入式补丁 |
 | R23 | 兼容性 | 无符号文件时仍可工作 | Must | 至少输出地址级指令流和地址级调用关系 |
 | R24 | 可扩展性 | 架构相关逻辑与通用追踪逻辑分层 | Should | 后续扩展到 `RISC-V` 或 `x86` 时无需重写主流程 |
-| R25 | 可测试性 | 具备可复现实验用例 | Must | 对 `thumb`、`thumb2`、`arm32`、`aarch64` 各至少有一套可验证 trace 正确性的样例程序 |
+| R25 | 可测试性 | 具备可复现实验用例 | Must | 对 `thumb`、`thumb2`、`arm32`、`aarch64`、`riscv32`、`riscv64` 各至少有一套可验证 trace 正确性的样例程序 |
 
 ## 输出接口与使用方式
 
@@ -45,7 +45,7 @@
 - `gdbtrace show-target`
 - `gdbtrace clear-target`
 - `gdbtrace clear-default-target`
-- `gdbtrace set-arch <thumb|thumb2|arm32|aarch64>`
+- `gdbtrace set-arch <thumb|thumb2|arm32|aarch64|riscv32|riscv64>`
 - `gdbtrace set-elf <file>`
 - `gdbtrace set-output <path.log>`
 - `gdbtrace set-mode <inst|call|both>`
@@ -168,11 +168,12 @@ ret main
 - 当前环境判断：宿主机为 `Darwin arm64`，指定 Docker 容器 `ubuntu` 为 `Linux aarch64`。
 - `aarch64` 测试策略：在 Docker 容器 `ubuntu` 内原生编译并运行测试 ELF，使用容器内 `gdb` 做真实 GDB 调试验证。
 - `arm32` / `thumb` / `thumb2` 测试策略：使用 `qemu-arm` 提供 gdb stub，再由 `gdb-multiarch` 连接执行真实 GDB 调试验证。
+- `riscv32` / `riscv64` 测试策略：使用 `qemu-riscv32` / `qemu-riscv64` 提供 gdb stub，再由 `gdb-multiarch` 连接执行真实 GDB 调试验证。
 - 测试资产来源：所有测试 ELF 均由仓库内自写源码编译生成，不依赖外部未知二进制。
-- 测试源码目录：在后续实现中新增 `test_programs/` 或等价目录，至少包含 `aarch64_sample.c`、`arm32_sample.c`、`thumb_sample.c`、`thumb2_sample.c`。
+- 测试源码目录：在后续实现中新增 `test_programs/` 或等价目录，至少包含 `aarch64_sample.c`、`arm32_sample.c`、`thumb_sample.c`、`thumb2_sample.c`、`riscv32_sample.c`、`riscv64_sample.c`。
 - 基础样例结构：统一包含 `main -> func_a -> func_b`，至少覆盖一个返回路径、一个嵌套调用、以及一个递归或间接调用场景。
 - 复杂 ELF 样例要求：除基础样例外，必须新增更大、更复杂的测试程序，使单次运行包含更多指令数量和更复杂的函数调用图。
-- 复杂样例文件规划：在基础样例之外，至少新增 `aarch64_complex.c`、`arm32_complex.c`、`thumb_complex.c`、`thumb2_complex.c` 或等价文件。
+- 复杂样例文件规划：在基础样例之外，至少新增 `aarch64_complex.c`、`arm32_complex.c`、`thumb_complex.c`、`thumb2_complex.c`、`riscv32_complex.c`、`riscv64_complex.c` 或等价文件。
 - 复杂 ELF 场景至少包括：
   - 更深的调用链，例如 `main -> parse -> dispatch -> worker -> helper`
   - 多分支路径与条件跳转
@@ -184,18 +185,23 @@ ret main
 - 复杂样例规模要求：单个复杂 ELF 应至少包含多个互相调用的业务函数、多个基本块以及明显长于基础样例的指令流，用于检验长 trace 的稳定性。
 - 复杂样例输出验证：复杂 ELF 不只验证调用边界，还要对关键路径上的代表性指令段做抽样核对，确认 `inst` 与 `both` 模式下指令顺序一致。
 - 复杂 ELF 验证重点：不仅验证“能采到 trace”，还要验证在更长指令流和更复杂调用关系下，`inst`、`call`、`both` 三种模式仍然输出正确。
-- 环境准备：当前开发容器已具备 `gdb`、`gdb-multiarch`、`qemu-arm`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`、`arm-linux-gnueabihf-gcc`。
-- 环境准备：在新的测试环境中，若缺失 `gdb-multiarch` 或 ARM32 交叉编译工具链，测试计划必须包含安装步骤。
+- 环境准备：当前开发容器已具备 `gdb`、`gdb-multiarch`、`qemu-arm`、`qemu-riscv32`、`qemu-riscv64`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`、`arm-linux-gnueabihf-gcc`、`riscv64-linux-gnu-gcc`。
+- 环境准备：在新的测试环境中，若缺失 `gdb-multiarch`、ARM32 交叉编译工具链或 RISC-V 交叉编译工具链，测试计划必须包含安装步骤。
 - `aarch64` 编译策略：使用容器内现有 `aarch64-linux-gnu-gcc` 编译测试 ELF。
 - `arm32` 编译策略：使用 ARM32 交叉编译器并指定 `-marm`。
 - `thumb` 编译策略：使用 ARM32 交叉编译器并指定 `-mthumb`。
 - `thumb2` 编译策略：使用 ARM32 交叉编译器并指定 `-mthumb -march=armv7-a` 或等价支持 Thumb-2 的目标参数。
+- `riscv32` 编译策略：使用 `riscv64-linux-gnu-gcc` 并指定 `-march=rv32imac -mabi=ilp32`，必要时配合自定义启动汇编和静态链接。
+- `riscv64` 编译策略：使用 `riscv64-linux-gnu-gcc` 并指定 `-march=rv64gc -mabi=lp64d`，必要时配合自定义启动汇编和静态链接。
 - `aarch64` 真实 GDB 测试：验证 `gdbtrace` 能从容器内原生 GDB 场景中获取指令流，并正确还原 `call` / `ret` 层级。
 - `arm32` / `thumb` / `thumb2` QEMU stub 测试：使用 `qemu-arm -g <port> ./prog` 启动目标，再由 `gdb-multiarch` 连接，验证三类模式的指令流、调用序列和缩进层级。
+- `riscv32` / `riscv64` QEMU stub 测试：使用 `qemu-riscv32 -g <port> ./prog` 或 `qemu-riscv64 -g <port> ./prog` 启动目标，再由 `gdb-multiarch` 连接，验证两类模式的指令流、调用序列和缩进层级。
 - `aarch64` 样例程序：普通函数调用、间接调用、递归调用、正常返回。
 - `arm32` 样例程序：ARM 模式下直接调用、返回到 `LR/PC`。
 - `thumb` 样例程序：Thumb 模式调用、返回、状态正确识别。
 - `thumb2` 样例程序：Thumb-2 指令流记录、调用返回识别、与普通 Thumb 区分正确。
+- `riscv32` 样例程序：RV32 指令流记录、函数调用与返回识别、静态链接 ELF 正常执行。
+- `riscv64` 样例程序：RV64 指令流记录、函数调用与返回识别、静态链接 ELF 正常执行。
 - 混合场景：`arm32` 与 `thumb/thumb2` 切换，确认模式切换后 PC、反汇编、函数边界判断正确。
 - 输出文件场景：确认追踪结果生成为 `.log` 文件，而不是 `.jsonl`。
 - 彩色输出场景：确认 log 文件中包含 ANSI 颜色码，且 `call`、`ret`、指令行可区分。
@@ -222,6 +228,7 @@ ret main
 - 查看兼容性场景：确认在支持 ANSI 的查看方式下颜色可见，在不支持 ANSI 的环境中至少不影响文本内容可读性。
 - `aarch64` 验收标准：在原生容器环境中完成真实 GDB 调试采集。
 - `arm32` / `thumb` / `thumb2` 验收标准：通过 QEMU stub + `gdb-multiarch` 完成真实 GDB 调试采集。
+- `riscv32` / `riscv64` 验收标准：通过 QEMU stub + `gdb-multiarch` 完成真实 GDB 调试采集。
 - 测试资产验收标准：所有测试 ELF 都来自仓库内源码编译。
 - 输出验收标准：生成的 trace 与需求文档定义的 `inst` / `call` / `both` 格式一致。
 - 仅设置 `set-target` 后连接：确认使用当前会话地址。
@@ -242,8 +249,9 @@ ret main
 - 当前阶段默认不接 `SkyEye` 后端做测试，只验证真实 GDB 调试链路。
 - 当前阶段默认 `aarch64` 采用容器内原生测试，不强制走 QEMU。
 - 当前阶段默认 `arm32`、`thumb`、`thumb2` 采用 QEMU gdb stub + `gdb-multiarch`。
+- 当前阶段默认 `riscv32`、`riscv64` 采用 QEMU gdb stub + `gdb-multiarch`。
 - 当前阶段默认测试用 ELF 由仓库内自写源码编译生成。
-- 当前阶段默认需要在容器内补装 `gdb-multiarch` 和 ARM32 交叉编译工具链后，再执行 ARM32/Thumb 系列真实调试测试。
+- 当前阶段默认需要在容器内补装 `gdb-multiarch`、ARM32 交叉编译工具链和 RISC-V 交叉编译工具链后，再执行对应真实调试测试。
 - 默认“当前会话”指当前交互式 `gdbtrace` 会话上下文，不等同于整个操作系统 shell 生命周期。
 - 默认全局默认地址采用本机用户级持久配置方式保存。
 - 默认符号解析来源为用户提供的 ELF 或符号文件；若缺失，则降级为地址级输出。
