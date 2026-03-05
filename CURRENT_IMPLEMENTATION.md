@@ -18,6 +18,7 @@
 - 已完成第十一批代码：无符号 ELF 的地址级指令流采集支持。
 - 已完成第十二批代码：`both` 模式双日志输出。
 - 已完成第十三批代码：动态库调用去除 `@plt` 边界并补充地址级子调用。
+- 已完成第十四批代码：独立使用指南文档。
 
 ## 已完成内容
 
@@ -60,6 +61,7 @@
 - 已新增 `test_programs/userspace_printf_app.c`，作为显式调用 `printf` / `snprintf` 的用户态程序样例。
 - 已新增 `tests/test_qemu_user_userspace_apps.py` 中的 `printf` 用户态真实测试，覆盖 `arm32` 与 `riscv64` 的 `qemu-user` 调试链路。
 - 已实现动态库调用名归一化：优先展示真实函数名，不将 `foo@plt` 单独作为最终调用边界；在缺少稳定符号名时补充地址型函数名 `sub_<addr>`。
+- 已新增 [USAGE.md](/Users/caojunze424/code/gdb_trace/USAGE.md)，集中说明 CLI 配置流程、真实后端示例、日志输出规则和常见问题。
 
 ## 当前验证状态
 
@@ -107,6 +109,7 @@
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 再次执行 `python3 -m unittest discover -s tests -v`，当前 36 项自动化测试全部通过。
 - 已在 Docker 容器 `ubuntu` 中完成 `both` 双日志输出自动化测试，覆盖生命周期、格式和元数据。
 - 已在 Docker 容器 `ubuntu` 中完成动态库调用展开验证，确认 `arm32` `printf` 用户态 trace 不再将 `printf@plt` 作为单独边界，并能继续展示 libc 内部地址级子调用。
+- 已完成使用指南文档一致性检查，确保其与现有 CLI、日志模式、真实后端和当前需求文档一致。
 
 ## 下一步
 
