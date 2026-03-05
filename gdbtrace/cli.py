@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from .filters import apply_filters
 from .formatter import render_log
 from .state import (
     GdbTraceError,
@@ -173,6 +174,14 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
         raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
 
     target = _resolve_target(paths, args.target)
+    source_events = sample_trace_events(session["arch"])
+    filtered_events = apply_filters(
+        source_events,
+        start=args.start_addr or "",
+        stop=args.stop_addr or "",
+        filter_func=args.filter_func or "",
+        filter_range=args.filter_range or "",
+    )
     new_runtime = {
         "status": "running",
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -189,7 +198,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             "filter_func": args.filter_func or "",
             "filter_range": args.filter_range or "",
         },
-        "events": [event.__dict__ for event in sample_trace_events(session["arch"])],
+        "events": [event.__dict__ for event in filtered_events],
     }
     save_runtime_state(paths, new_runtime)
     print("trace started")

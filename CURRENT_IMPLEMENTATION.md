@@ -8,6 +8,7 @@
 - 已完成第一批代码：CLI 配置状态管理。
 - 已完成第二批代码：生命周期命令。
 - 已完成第三批代码：trace 日志生成器与最小事件模型。
+- 已完成第四批代码：过滤参数生效逻辑。
 
 ## 已完成内容
 
@@ -26,6 +27,8 @@
 - 已实现最小 trace 事件模型，并为 `aarch64`、`arm32`、`thumb`、`thumb2` 提供样例事件。
 - 已实现 `inst`、`call`、`both` 三种模式的日志格式化逻辑。
 - 已将 `save` / `stop` 输出切换为基于事件模型的真实日志格式，而不是纯占位文本。
+- 已实现 `--start`、`--stop`、`--filter-func`、`--filter-range` 对事件流的实际过滤。
+- 已实现过滤后的深度重映射，保证 `call` / `both` 模式输出保持正确缩进层级。
 
 ## 当前验证状态
 
@@ -37,12 +40,14 @@
 - 已在 Docker 容器 `ubuntu` 中完成 `start -> pause -> start -> save -> stop` 的最小手工命令验证。
 - 已在 Docker 容器 `ubuntu` 中通过 `python3 -m unittest discover -s tests -v` 完成日志格式化相关自动化测试。
 - 已在 Docker 容器 `ubuntu` 中完成 `inst` 和 `both` 模式的最小手工日志验证。
+- 已在 Docker 容器 `ubuntu` 中通过 `python3 -m unittest discover -s tests -v` 完成过滤逻辑相关自动化测试。
+- 已在 Docker 容器 `ubuntu` 中完成 `--filter-func` 的最小手工日志验证。
 
 ## 下一步
 
-1. 继续推进架构适配入口，把 `aarch64`、`arm32`、`thumb`、`thumb2` 的样例事件生成拆成可扩展结构。
-2. 开始为真实远程调试接入预留采集接口，替换当前静态样例事件来源。
-3. 补充 `call` / `both` 模式下更多嵌套和过滤场景测试。
+1. 开始为真实远程调试接入预留采集接口，替换当前静态样例事件来源。
+2. 把样例事件提供者抽象成可扩展后端，便于后续接入真实 GDB/SkyEye 数据流。
+3. 继续补充 `arm32`、`thumb`、`thumb2` 的模式级日志测试。
 4. 在 Docker 容器 `ubuntu` 中继续执行自动化测试与手工验证。
 
 ## 已知阻塞或风险
