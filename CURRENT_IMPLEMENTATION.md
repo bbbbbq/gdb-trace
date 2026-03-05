@@ -60,14 +60,18 @@
 - 已在 Docker 容器 `ubuntu` 中完成 `thumb2` `inst` 模式的最小手工日志验证。
 - 已在 Docker 容器 `ubuntu` 中通过 `python3 -m unittest discover -s tests -v` 完成日志元数据相关自动化测试。
 - 已在 Docker 容器 `ubuntu` 中完成日志头 `backend` / `events` 字段的手工验证。
+- 已将测试计划扩展为“基础样例 + 复杂 ELF 样例”两层结构，要求后续补齐更长指令流和更复杂调用图的真实程序验证。
+- 已在 Docker 容器 `ubuntu` 中于 2026-03-06 再次执行 `python3 -m unittest discover -s tests -v`，当前 19 项自动化测试全部通过。
 
 ## 下一步
 
 1. 先不接 `SkyEye` 后端，优先规划并实现真实 GDB 调试链路测试。
-2. 为仓库新增测试源码目录，编写 `aarch64`、`arm32`、`thumb`、`thumb2` 四类测试程序源码并在容器内编译生成 ELF。
-3. `aarch64` 走容器内原生 `gdb` 调试测试。
-4. `arm32`、`thumb`、`thumb2` 走 `qemu-arm` gdb stub + `gdb-multiarch` 调试测试。
-5. 在执行 ARM32/Thumb 系列真实测试前，先补齐 `gdb-multiarch` 和 ARM32 交叉编译工具链。
+2. 为仓库新增测试源码目录，先编写 `aarch64_sample.c`、`arm32_sample.c`、`thumb_sample.c`、`thumb2_sample.c` 四类基础测试程序源码并在容器内编译生成 ELF。
+3. 在基础样例之外，再补齐 `aarch64_complex.c`、`arm32_complex.c`、`thumb_complex.c`、`thumb2_complex.c` 或等价复杂样例，用于覆盖更长指令流和更复杂调用图。
+4. 复杂样例需要覆盖深层调用链、多分支、循环、递归、间接调用、正常路径与错误路径并存等场景。
+5. `aarch64` 走容器内原生 `gdb` 调试测试。
+6. `arm32`、`thumb`、`thumb2` 走 `qemu-arm` gdb stub + `gdb-multiarch` 调试测试。
+7. 在执行 ARM32/Thumb 系列真实测试前，先补齐 `gdb-multiarch` 和 ARM32 交叉编译工具链。
 
 ## 已知阻塞或风险
 
@@ -75,3 +79,4 @@
 - 当前日志虽已按目标格式输出，但事件来源仍是静态样例数据，尚未接入真实指令流采集。
 - ARM32 / Thumb / Thumb2 的真实 GDB 调试测试依赖容器内补装 `gdb-multiarch` 和 ARM32 交叉编译工具链。
 - 当前真实 GDB 测试样例 ELF 仍未落地，需要由仓库内源码自行编译生成。
+- 复杂 ELF 样例尚未落地，后续需要为每种架构补齐更长指令流、更复杂调用关系和可对拍的预期调用图。
