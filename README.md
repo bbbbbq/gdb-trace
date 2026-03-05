@@ -125,6 +125,7 @@ error: missing required trace config: arch, elf, output, mode
 - `call` 模式仅保留 `call <func>` 和 `ret <func>`，通过每层 4 个空格表示函数嵌套。
 - `both` 模式为两者结合：`call/ret` 行沿用 `call` 模式，指令行沿用 `inst` 模式，并显示在所属函数层级下。
 - `both` 模式落盘为两份 `.log` 文件：原始 `set-output` 路径保存 `both` 内容，派生的 `<stem>.call.log` 保存 `call` 内容。
+- 动态库调用在可识别场景下优先显示真实函数名，不将 `foo@plt` 单独作为调用边界；若缺少稳定符号名，则允许退化为地址型函数名，如 `sub_<addr>`。
 - ANSI 颜色码直接写入日志文件，用于区分 `call`、`ret` 和普通指令行。
 - 日志头保留 `target`、`arch`、`elf`、`start_time`、`trace_mode` 等会话元数据。
 
@@ -191,6 +192,7 @@ ret main
 - 复杂 ELF 验证重点：不仅验证“能采到 trace”，还要验证在更长指令流和更复杂调用关系下，`inst`、`call`、`both` 三种模式仍然输出正确。
 - 用户态程序验证：除基础样例和复杂样例外，还应加入更贴近真实场景的 `qemu-user` 用户态程序，覆盖动态链接、`libc` 调用、字符串处理、格式化、分支和循环。
 - `printf` 用户态程序验证：应加入显式调用 `printf` / `snprintf` 的用户态 ELF，验证格式化输出路径和 `plt` 调用边界在真实调试链路下可被采集。
+- 动态库调用验证：应确认 trace 不把 `printf@plt`、`snprintf@plt` 之类的 PLT 跳板单独视为最终调用边界，而是尽量继续展开真实函数或地址级子调用。
 - 环境准备：当前开发容器已具备 `gdb`、`gdb-multiarch`、`qemu-arm`、`qemu-riscv32`、`qemu-riscv64`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`、`arm-linux-gnueabihf-gcc`、`riscv64-linux-gnu-gcc`。
 - 环境准备：在新的测试环境中，若缺失 `gdb-multiarch`、ARM32 交叉编译工具链或 RISC-V 交叉编译工具链，测试计划必须包含安装步骤。
 - `aarch64` 编译策略：使用容器内现有 `aarch64-linux-gnu-gcc` 编译测试 ELF。

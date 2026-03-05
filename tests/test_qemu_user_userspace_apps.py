@@ -116,7 +116,7 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
         self.assertIn("call normalize_token", content)
         self.assertRegex(content, r"call .*strlen")
         self.assertTrue(
-            any(marker in content for marker in ("call parse_weight", "call compose_record", "call strlen@plt")),
+            any(marker in content for marker in ("call parse_weight", "call compose_record", "call strlen")),
             msg=content,
         )
         self.assertTrue(
@@ -129,10 +129,8 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
     def assert_printf_trace(self, content: str, backend_name: str) -> None:
         self.assertIn(f"backend={backend_name}", content)
         self.assertIn("call emit_summary", content)
-        self.assertTrue(
-            any(marker in content for marker in ("call printf", "call printf@plt", "call __printf")),
-            msg=content,
-        )
+        self.assertIn("call printf", content)
+        self.assertNotIn("call printf@plt", content)
         instruction_lines = [line for line in content.splitlines() if re.match(r"^\s*0x[0-9a-f]+ ", line)]
         self.assertGreaterEqual(len(instruction_lines), 12)
 

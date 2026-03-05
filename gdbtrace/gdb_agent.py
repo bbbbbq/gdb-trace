@@ -8,35 +8,115 @@ from pathlib import Path
 import gdb
 
 
-INSTRUCTION_RE = re.compile(r"(?:=>\s*)?(0x[0-9a-fA-F]+)(?:\s+<[^>]+>)?:\s*(.*)")
+INSTRUCTION_RE = re.compile(r"(?:=>\s*)?(0x[0-9a-fA-F]+)(?:\s+<([^>]+)>)?:\s*(.*)")
 ENTRY_RE = re.compile(r"Entry point:\s*(0x[0-9a-fA-F]+)")
+BACKTRACE_RE = re.compile(r"^#\d+\s+(?:0x[0-9a-fA-Fx]+\s+in\s+)?([^\s(]+)")
+CALL_RE = re.compile(r"^([a-z.]+)\s+([^\s]+)(?:\s+<([^>]+)>)?")
 
 
-def _relevant_stack() -> list[str]:
-    frame = gdb.selected_frame()
-    names: list[str] = []
-    found_main = False
-    while frame is not None:
-        name = frame.name()
-        if name:
-            names.append(name)
-            if name == "main":
-                found_main = True
-                break
-        frame = frame.older()
-    if not found_main:
-        return []
-    return list(reversed(names))
+def _normalized_frame_name(name: str) -> str:
+    if name.endswith("@plt"):
+        return name[:-4]
+    return name
 
 
-def _current_instruction() -> tuple[str, str]:
+def _instruction_details() -> tuple[str, str, str]:
     line = gdb.execute("x/i $pc", to_string=True).strip()
     match = INSTRUCTION_RE.search(line)
     if not match:
         raise RuntimeError(f"failed to parse instruction line: {line}")
     pc = match.group(1).lower()
-    instruction = " ".join(match.group(2).replace("\t", " ").split())
+    symbol = ""
+    if match.group(2):
+        symbol = _normalized_frame_name(match.group(2).split("+", 1)[0])
+    instruction = " ".join(match.group(3).replace("\t", " ").split())
+    return pc, symbol, instruction
+
+
+def _current_symbol_name() -> str:
+    try:
+        info = gdb.execute("info symbol $pc", to_string=True).strip()
+    except gdb.error:
+        return ""
+    if not info or info.startswith("No symbol matches"):
+        return ""
+    symbol = info.split(" + ", 1)[0].split(" in section ", 1)[0].strip()
+    if not symbol or symbol == "??":
+        return ""
+    return _normalized_frame_name(symbol)
+
+
+def _relevant_stack() -> list[str]:
+    names: list[str] = []
+    found_main = False
+    backtrace = gdb.execute("bt", to_string=True)
+    for line in backtrace.splitlines():
+        match = BACKTRACE_RE.match(line.strip())
+        if not match:
+            continue
+        normalized_name = _normalized_frame_name(match.group(1))
+        if normalized_name == "??":
+            continue
+        if not names or names[-1] != normalized_name:
+            names.append(normalized_name)
+        if normalized_name == "main":
+            found_main = True
+            break
+    if not found_main:
+        return []
+    _, instruction_symbol, _ = _instruction_details()
+    current_symbol = instruction_symbol or _current_symbol_name()
+    if current_symbol and (not names or names[0] != current_symbol):
+        names.insert(0, current_symbol)
+    return list(reversed(names))
+
+
+def _current_instruction() -> tuple[str, str]:
+    pc, _, instruction = _instruction_details()
     return pc, instruction
+
+
+def _instruction_mnemonic(instruction: str) -> str:
+    return instruction.split(maxsplit=1)[0].lower() if instruction else ""
+
+
+def _is_return_instruction(instruction: str) -> bool:
+    mnemonic = _instruction_mnemonic(instruction)
+    if mnemonic == "ret":
+        return True
+    return instruction.startswith("bx lr") or instruction.startswith("bx\txlr") or instruction == "jr ra"
+
+
+def _inferred_call_target(instruction: str) -> str:
+    match = CALL_RE.match(instruction)
+    if not match:
+        return ""
+    mnemonic = match.group(1).lower()
+    if mnemonic not in {"bl", "blx", "blr", "jal", "jalr", "call"}:
+        return ""
+    if match.group(3):
+        return _normalized_frame_name(match.group(3).split("+", 1)[0])
+    target = match.group(2)
+    if target.startswith("0x"):
+        return f"sub_{target[2:].lower()}"
+    return ""
+
+
+def _next_stack(
+    current_stack: list[str],
+    observed_stack: list[str],
+    instruction: str,
+) -> list[str]:
+    next_stack = observed_stack or []
+    if len(next_stack) < len(current_stack) and not _is_return_instruction(instruction):
+        next_stack = list(current_stack)
+
+    inferred_target = _inferred_call_target(instruction)
+    if inferred_target and len(next_stack) <= len(current_stack):
+        if not current_stack or current_stack[-1] != inferred_target:
+            next_stack = list(current_stack) + [inferred_target]
+
+    return next_stack
 
 
 def _common_prefix_size(left: list[str], right: list[str]) -> int:
@@ -165,7 +245,7 @@ def run() -> None:
 
     steps = 0
     while steps < max_steps:
-        current_stack = _relevant_stack()
+        current_stack = list(stack)
         if not current_stack:
             break
 
@@ -189,7 +269,8 @@ def run() -> None:
                 raise
             break
 
-        next_stack = _relevant_stack()
+        observed_stack = _relevant_stack()
+        next_stack = _next_stack(current_stack, observed_stack, instruction)
         _emit_stack_transition(events, current_stack, next_stack)
         stack = next_stack
 
