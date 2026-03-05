@@ -14,6 +14,7 @@
 - 已完成第七批代码：采集结果元数据完善。
 - 已完成第八批代码：`arm32` / `thumb` / `thumb2` 的真实 QEMU gdb stub 调试链路。
 - 已完成第九批代码：`riscv32` / `riscv64` 的真实 QEMU gdb stub 调试链路。
+- 已完成第十批代码：更贴近真实场景的 qemu-user 用户态程序与调试测试。
 
 ## 已完成内容
 
@@ -47,6 +48,8 @@
 - 已新增 `test_programs/riscv_start.S` 共享启动汇编，用于构建可调试的静态 `riscv32` / `riscv64` ELF。
 - 已新增 `test_programs/riscv32_sample.c`、`riscv64_sample.c` 两个 RISC-V 基础样例源码。
 - 已新增 `test_programs/riscv32_complex.c`、`riscv64_complex.c` 两个 RISC-V 复杂样例源码。
+- 已新增 `test_programs/userspace_qemu_app.c`，作为更贴近真实场景的用户态程序样例，覆盖动态链接、`libc` 调用、字符串处理和格式化。
+- 已新增 `tests/test_qemu_user_userspace_apps.py`，用于验证 ARM 与 `riscv64` 在 `qemu-user` 用户态程序场景下的真实 trace 行为。
 
 ## 当前验证状态
 
@@ -83,13 +86,16 @@
 - 已在 Docker 容器 `ubuntu` 中完成 `riscv32`、`riscv64` 的 `qemu-riscv32` / `qemu-riscv64` gdb stub 真实场景自动化测试，覆盖基础样例、复杂样例、非 RISC-V 拒绝路径。
 - 已在 Docker 容器 `ubuntu` 中以手工 CLI 流程完成 `riscv64_complex` 的 `set-* -> start -> save -> stop` 验证，并确认产出带颜色的层级化 `.log`。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 28 项自动化测试全部通过。
+- 已在 Docker 容器 `ubuntu` 中完成带 `libc` 调用的 ARM 与 `riscv64` 用户态程序 `qemu-user` 自动化测试。
+- 已在 Docker 容器 `ubuntu` 中以手工 CLI 流程完成动态链接 `arm32` 用户态程序的 `set-* -> start -> save -> stop` 验证，并确认 trace 中出现业务函数与 `strlen@plt` 等用户态调用边界。
+- 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 30 项自动化测试全部通过。
 
 ## 下一步
 
 1. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
 2. 将真实采集后端与静态样例后端的选择方式整理成更明确的接口或配置，避免后续接入 `SkyEye` 时继续依赖环境变量命名约定。
 3. 评估并实现基于远程 GDB stub 的通用后端抽象，为后续接入 `SkyEye` 远程目标做准备。
-4. 在现有基础样例和复杂样例之外，继续补充更深递归、更长循环和更复杂间接调用的对拍样例。
+4. 在现有基础样例、复杂样例和用户态程序样例之外，继续补充更深递归、更长循环和更复杂间接调用的对拍样例。
 5. 开始规划 `SkyEye` 远程目标适配所需的连接、停止条件和断连恢复处理。
 
 ## 已知阻塞或风险
@@ -99,3 +105,4 @@
 - 当前日志已支持真实 `aarch64`、ARM32 系与 RISC-V 系采集，但默认后端仍是静态样例，尚未切换为面向真实目标的统一默认行为。
 - `SkyEye` 远程目标尚未接入，当前真实场景仅覆盖容器内原生 `gdb`、`qemu-arm` gdb stub 与 `qemu-riscv` gdb stub。
 - 基础样例和复杂样例已经落地，但更大规模的对拍样例和预期调用图资料仍需继续补充。
+- 动态链接用户态程序在部分架构上会较早进入 PLT/动态装载相关路径，当前 trace 能稳定覆盖关键业务函数和部分 `libc` 调用边界，但对更深层库内部执行流的还原仍有限。
