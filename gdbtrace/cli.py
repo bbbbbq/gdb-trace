@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from .formatter import render_log
 from .state import (
     GdbTraceError,
     Paths,
@@ -21,12 +22,10 @@ from .state import (
     validate_output,
     validate_target,
 )
+from .trace_model import sample_trace_events
 
 
 CommandHandler = Callable[[argparse.Namespace, Paths], int]
-
-ANSI_CYAN = "\x1b[36m"
-ANSI_RESET = "\x1b[0m"
 
 
 def _set_session_value(paths: Paths, key: str, value: str) -> int:
@@ -150,31 +149,10 @@ def _resolve_target(paths: Paths, explicit_target: str | None) -> str:
     raise GdbTraceError("remote target is not configured")
 
 
-def _render_log(runtime: dict[str, str], snapshot_kind: str) -> str:
-    config = runtime["config"]
-    filters = runtime["filters"]
-    lines = [
-        f"{ANSI_CYAN}[trace {snapshot_kind}]{ANSI_RESET} "
-        f"target={runtime['target']} arch={config['arch']} elf={config['elf']} "
-        f"trace_mode={config['mode']} status={runtime['status']} start_time={runtime['started_at']}",
-        f"[output] path={config['output']}",
-    ]
-    if filters.get("start"):
-        lines.append(f"[range] start={filters['start']}")
-    if filters.get("stop"):
-        lines.append(f"[range] stop={filters['stop']}")
-    if filters.get("filter_func"):
-        lines.append(f"[filter] func={filters['filter_func']}")
-    if filters.get("filter_range"):
-        lines.append(f"[filter] range={filters['filter_range']}")
-    lines.append("[note] trace capture engine is not implemented yet")
-    return "\n".join(lines) + "\n"
-
-
-def _write_log_snapshot(runtime: dict[str, str], snapshot_kind: str) -> None:
+def _write_log_snapshot(runtime: dict[str, object], snapshot_kind: str) -> None:
     output_path = Path(runtime["config"]["output"])
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(_render_log(runtime, snapshot_kind), encoding="utf-8")
+    output_path.write_text(render_log(runtime, snapshot_kind), encoding="utf-8")
 
 
 def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
@@ -211,6 +189,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             "filter_func": args.filter_func or "",
             "filter_range": args.filter_range or "",
         },
+        "events": [event.__dict__ for event in sample_trace_events(session["arch"])],
     }
     save_runtime_state(paths, new_runtime)
     print("trace started")

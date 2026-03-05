@@ -81,7 +81,8 @@ class CliLifecycleTest(unittest.TestCase):
         self.assertIn(f"trace stopped and saved to {self.output_path}", stopped.stdout)
         stop_content = self.output_path.read_text(encoding="utf-8")
         self.assertIn("[trace final]", stop_content)
-        self.assertIn("[note] trace capture engine is not implemented yet", stop_content)
+        self.assertIn("\x1b[32mcall main\x1b[0m", stop_content)
+        self.assertIn("    0x400580 stp x29, x30, [sp, #-16]!", stop_content)
 
     def test_resume_rejects_new_runtime_arguments(self) -> None:
         self.configure_trace()
