@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class CliLifecycleTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self.temp_dir.name)
+        self.output_path = self.state_dir / "trace.log"
+        self.env = os.environ.copy()
+        self.env["PYTHONPATH"] = str(REPO_ROOT)
+        self.env["GDBTRACE_SESSION_FILE"] = str(self.state_dir / "session.json")
+        self.env["GDBTRACE_GLOBAL_CONFIG"] = str(self.state_dir / "global.json")
+        self.env["GDBTRACE_RUNTIME_FILE"] = str(self.state_dir / "runtime.json")
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "gdbtrace", *args],
+            cwd=REPO_ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+        )
+
+    def configure_trace(self) -> None:
+        self.assertEqual(self.run_cli("set-target", "127.0.0.1:1234").returncode, 0)
+        self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
+        self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
+        self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
+        self.assertEqual(self.run_cli("set-mode", "both").returncode, 0)
+
+    def test_start_reports_all_missing_required_config(self) -> None:
+        result = self.run_cli("start")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("error: missing required trace config: arch, elf, output, mode", result.stdout)
+
+    def test_start_reports_remaining_missing_required_config(self) -> None:
+        self.assertEqual(self.run_cli("set-arch", "thumb").returncode, 0)
+        self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
+        result = self.run_cli("start", "--target", "127.0.0.1:1234")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("error: missing required trace config: elf, mode", result.stdout)
+
+    def test_pause_start_save_stop_round_trip(self) -> None:
+        self.configure_trace()
+
+        started = self.run_cli("start")
+        self.assertEqual(started.returncode, 0)
+        self.assertIn("trace started", started.stdout)
+
+        paused = self.run_cli("pause")
+        self.assertEqual(paused.returncode, 0)
+        self.assertIn("trace paused", paused.stdout)
+
+        resumed = self.run_cli("start")
+        self.assertEqual(resumed.returncode, 0)
+        self.assertIn("trace resumed", resumed.stdout)
+
+        saved = self.run_cli("save")
+        self.assertEqual(saved.returncode, 0)
+        self.assertIn(f"trace saved to {self.output_path}", saved.stdout)
+        self.assertTrue(self.output_path.exists())
+        save_content = self.output_path.read_text(encoding="utf-8")
+        self.assertIn("[trace snapshot]", save_content)
+        self.assertIn("trace_mode=both", save_content)
+
+        stopped = self.run_cli("stop")
+        self.assertEqual(stopped.returncode, 0)
+        self.assertIn(f"trace stopped and saved to {self.output_path}", stopped.stdout)
+        stop_content = self.output_path.read_text(encoding="utf-8")
+        self.assertIn("[trace final]", stop_content)
+        self.assertIn("[note] trace capture engine is not implemented yet", stop_content)
+
+    def test_resume_rejects_new_runtime_arguments(self) -> None:
+        self.configure_trace()
+        self.assertEqual(self.run_cli("start").returncode, 0)
+        self.assertEqual(self.run_cli("pause").returncode, 0)
+        result = self.run_cli("start", "--target", "10.0.0.1:4321")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("error: cannot change trace arguments while resuming a paused trace", result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()

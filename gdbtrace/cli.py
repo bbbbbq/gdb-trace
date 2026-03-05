@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -9,7 +10,9 @@ from .state import (
     Paths,
     clear_file,
     resolve_paths,
+    runtime_state,
     save_global_state,
+    save_runtime_state,
     save_session_state,
     session_state,
     global_state,
@@ -21,6 +24,9 @@ from .state import (
 
 
 CommandHandler = Callable[[argparse.Namespace, Paths], int]
+
+ANSI_CYAN = "\x1b[36m"
+ANSI_RESET = "\x1b[0m"
 
 
 def _set_session_value(paths: Paths, key: str, value: str) -> int:
@@ -120,6 +126,126 @@ def cmd_clear_mode(_: argparse.Namespace, paths: Paths) -> int:
     return _clear_session_value(paths, "mode")
 
 
+def _active_runtime(paths: Paths) -> dict[str, str]:
+    return runtime_state(paths)
+
+
+def _required_config(session: dict[str, str]) -> list[str]:
+    missing: list[str] = []
+    for key in ("arch", "elf", "output", "mode"):
+        if not session.get(key):
+            missing.append(key)
+    return missing
+
+
+def _resolve_target(paths: Paths, explicit_target: str | None) -> str:
+    if explicit_target:
+        return validate_target(explicit_target)
+    session = session_state(paths)
+    if session.get("target"):
+        return session["target"]
+    global_cfg = global_state(paths)
+    if global_cfg.get("default_target"):
+        return global_cfg["default_target"]
+    raise GdbTraceError("remote target is not configured")
+
+
+def _render_log(runtime: dict[str, str], snapshot_kind: str) -> str:
+    config = runtime["config"]
+    filters = runtime["filters"]
+    lines = [
+        f"{ANSI_CYAN}[trace {snapshot_kind}]{ANSI_RESET} "
+        f"target={runtime['target']} arch={config['arch']} elf={config['elf']} "
+        f"trace_mode={config['mode']} status={runtime['status']} start_time={runtime['started_at']}",
+        f"[output] path={config['output']}",
+    ]
+    if filters.get("start"):
+        lines.append(f"[range] start={filters['start']}")
+    if filters.get("stop"):
+        lines.append(f"[range] stop={filters['stop']}")
+    if filters.get("filter_func"):
+        lines.append(f"[filter] func={filters['filter_func']}")
+    if filters.get("filter_range"):
+        lines.append(f"[filter] range={filters['filter_range']}")
+    lines.append("[note] trace capture engine is not implemented yet")
+    return "\n".join(lines) + "\n"
+
+
+def _write_log_snapshot(runtime: dict[str, str], snapshot_kind: str) -> None:
+    output_path = Path(runtime["config"]["output"])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(_render_log(runtime, snapshot_kind), encoding="utf-8")
+
+
+def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
+    runtime = _active_runtime(paths)
+    if runtime.get("status") == "running":
+        raise GdbTraceError("trace is already running")
+    if runtime.get("status") == "paused":
+        if any((args.target, args.start_addr, args.stop_addr, args.filter_func, args.filter_range)):
+            raise GdbTraceError("cannot change trace arguments while resuming a paused trace")
+        runtime["status"] = "running"
+        save_runtime_state(paths, runtime)
+        print("trace resumed")
+        return 0
+
+    session = session_state(paths)
+    missing = _required_config(session)
+    if missing:
+        raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
+
+    target = _resolve_target(paths, args.target)
+    new_runtime = {
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "target": target,
+        "config": {
+            "arch": session["arch"],
+            "elf": session["elf"],
+            "output": session["output"],
+            "mode": session["mode"],
+        },
+        "filters": {
+            "start": args.start_addr or "",
+            "stop": args.stop_addr or "",
+            "filter_func": args.filter_func or "",
+            "filter_range": args.filter_range or "",
+        },
+    }
+    save_runtime_state(paths, new_runtime)
+    print("trace started")
+    return 0
+
+
+def cmd_pause(_: argparse.Namespace, paths: Paths) -> int:
+    runtime = _active_runtime(paths)
+    if runtime.get("status") != "running":
+        raise GdbTraceError("no running trace to pause")
+    runtime["status"] = "paused"
+    save_runtime_state(paths, runtime)
+    print("trace paused")
+    return 0
+
+
+def cmd_save(_: argparse.Namespace, paths: Paths) -> int:
+    runtime = _active_runtime(paths)
+    if runtime.get("status") not in {"running", "paused"}:
+        raise GdbTraceError("no active trace to save")
+    _write_log_snapshot(runtime, "snapshot")
+    print(f"trace saved to {runtime['config']['output']}")
+    return 0
+
+
+def cmd_stop(_: argparse.Namespace, paths: Paths) -> int:
+    runtime = _active_runtime(paths)
+    if runtime.get("status") not in {"running", "paused"}:
+        raise GdbTraceError("no active trace to stop")
+    _write_log_snapshot(runtime, "final")
+    clear_file(paths.runtime_file)
+    print(f"trace stopped and saved to {runtime['config']['output']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gdbtrace")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -145,6 +271,16 @@ def build_parser() -> argparse.ArgumentParser:
     add_command("clear-output", cmd_clear_output)
     add_command("clear-mode", cmd_clear_mode)
 
+    start_parser = add_command("start", cmd_start)
+    start_parser.add_argument("--target")
+    start_parser.add_argument("--start", dest="start_addr")
+    start_parser.add_argument("--stop", dest="stop_addr")
+    start_parser.add_argument("--filter-func")
+    start_parser.add_argument("--filter-range")
+    add_command("pause", cmd_pause)
+    add_command("save", cmd_save)
+    add_command("stop", cmd_stop)
+
     return parser
 
 
@@ -157,4 +293,3 @@ def main(argv: list[str] | None = None) -> int:
     except GdbTraceError as exc:
         print(f"error: {exc}")
         return 1
-
