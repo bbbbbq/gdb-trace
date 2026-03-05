@@ -41,6 +41,11 @@
 
 - 已验证需求文档与协作文档在命名和接口约束上保持一致。
 - 已验证输出格式示例已写入需求文档。
+- 当前测试阶段暂不在 `SkyEye` 后端做集成验证。
+- 已确认宿主机架构为 `Darwin arm64`。
+- 已确认指定 Docker 容器 `ubuntu` 架构为 `Linux aarch64`。
+- 已确认容器内现有工具包括：`gdb`、`qemu-arm`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`。
+- 已确认容器当前缺失：`gdb-multiarch`、ARM32 交叉编译工具链。
 - 已在 Docker 容器 `ubuntu` 中通过 `python3 -m unittest discover -s tests -v` 完成配置管理相关自动化测试。
 - 已在 Docker 容器 `ubuntu` 中完成配置命令的最小手工命令验证。
 - 已在 Docker 容器 `ubuntu` 中通过 `python3 -m unittest discover -s tests -v` 完成生命周期命令相关自动化测试。
@@ -58,13 +63,15 @@
 
 ## 下一步
 
-1. 开始规划真实 GDB/SkyEye 采集后端所需的接口输入输出。
-2. 为未来真实后端定义最小适配层，包括连接、拉取事件、关闭会话三个动作。
-3. 继续增强运行时状态，补充当前 trace 状态查看命令。
-4. 在 Docker 容器 `ubuntu` 中继续执行自动化测试与手工验证。
+1. 先不接 `SkyEye` 后端，优先规划并实现真实 GDB 调试链路测试。
+2. 为仓库新增测试源码目录，编写 `aarch64`、`arm32`、`thumb`、`thumb2` 四类测试程序源码并在容器内编译生成 ELF。
+3. `aarch64` 走容器内原生 `gdb` 调试测试。
+4. `arm32`、`thumb`、`thumb2` 走 `qemu-arm` gdb stub + `gdb-multiarch` 调试测试。
+5. 在执行 ARM32/Thumb 系列真实测试前，先补齐 `gdb-multiarch` 和 ARM32 交叉编译工具链。
 
 ## 已知阻塞或风险
 
 - 当前尚无代码目录结构，后续实现时需要先确定最小工程骨架。
 - 当前日志虽已按目标格式输出，但事件来源仍是静态样例数据，尚未接入真实指令流采集。
-- 架构适配、函数调用识别和真实远程调试接入均仍处于需求阶段。
+- ARM32 / Thumb / Thumb2 的真实 GDB 调试测试依赖容器内补装 `gdb-multiarch` 和 ARM32 交叉编译工具链。
+- 当前真实 GDB 测试样例 ELF 仍未落地，需要由仓库内源码自行编译生成。

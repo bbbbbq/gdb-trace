@@ -164,6 +164,21 @@ ret main
 
 ## 测试与验收场景
 
+- 当前测试阶段：暂不在 `SkyEye` 后端做集成验证，优先验证真实 GDB 调试链路。
+- 当前环境判断：宿主机为 `Darwin arm64`，指定 Docker 容器 `ubuntu` 为 `Linux aarch64`。
+- `aarch64` 测试策略：在 Docker 容器 `ubuntu` 内原生编译并运行测试 ELF，使用容器内 `gdb` 做真实 GDB 调试验证。
+- `arm32` / `thumb` / `thumb2` 测试策略：使用 `qemu-arm` 提供 gdb stub，再由 `gdb-multiarch` 连接执行真实 GDB 调试验证。
+- 测试资产来源：所有测试 ELF 均由仓库内自写源码编译生成，不依赖外部未知二进制。
+- 测试源码目录：在后续实现中新增 `test_programs/` 或等价目录，至少包含 `aarch64_sample.c`、`arm32_sample.c`、`thumb_sample.c`、`thumb2_sample.c`。
+- 测试源码结构：统一包含 `main -> func_a -> func_b`，至少覆盖一个返回路径、一个嵌套调用、以及一个递归或间接调用场景。
+- 环境准备：容器当前已有 `gdb`、`qemu-arm`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`。
+- 环境准备：容器当前缺失 `gdb-multiarch` 与 ARM32 交叉编译工具链，测试计划必须包含安装步骤。
+- `aarch64` 编译策略：使用容器内现有 `aarch64-linux-gnu-gcc` 编译测试 ELF。
+- `arm32` 编译策略：使用 ARM32 交叉编译器并指定 `-marm`。
+- `thumb` 编译策略：使用 ARM32 交叉编译器并指定 `-mthumb`。
+- `thumb2` 编译策略：使用 ARM32 交叉编译器并指定 `-mthumb -march=armv7-a` 或等价支持 Thumb-2 的目标参数。
+- `aarch64` 真实 GDB 测试：验证 `gdbtrace` 能从容器内原生 GDB 场景中获取指令流，并正确还原 `call` / `ret` 层级。
+- `arm32` / `thumb` / `thumb2` QEMU stub 测试：使用 `qemu-arm -g <port> ./prog` 启动目标，再由 `gdb-multiarch` 连接，验证三类模式的指令流、调用序列和缩进层级。
 - `aarch64` 样例程序：普通函数调用、间接调用、递归调用、正常返回。
 - `arm32` 样例程序：ARM 模式下直接调用、返回到 `LR/PC`。
 - `thumb` 样例程序：Thumb 模式调用、返回、状态正确识别。
@@ -187,6 +202,10 @@ ret main
 - 递归调用场景：同名函数多层进入和返回，确认深度与配对关系正确。
 - 查看一致性场景：需求文档中的格式示例与模式说明、测试项一致，不残留旧字段写法。
 - 查看兼容性场景：确认在支持 ANSI 的查看方式下颜色可见，在不支持 ANSI 的环境中至少不影响文本内容可读性。
+- `aarch64` 验收标准：在原生容器环境中完成真实 GDB 调试采集。
+- `arm32` / `thumb` / `thumb2` 验收标准：通过 QEMU stub + `gdb-multiarch` 完成真实 GDB 调试采集。
+- 测试资产验收标准：所有测试 ELF 都来自仓库内源码编译。
+- 输出验收标准：生成的 trace 与需求文档定义的 `inst` / `call` / `both` 格式一致。
 - 仅设置 `set-target` 后连接：确认使用当前会话地址。
 - 仅设置 `set-default-target` 后连接：确认新会话自动使用全局默认地址。
 - 同时设置两者后连接：确认优先使用当前会话地址。
@@ -202,6 +221,11 @@ ret main
 ## 假设与范围边界
 
 - 默认 `gdbtrace` 通过标准远程调试方式接入 `SkyEye`，不直接修改模拟器内部实现。
+- 当前阶段默认不接 `SkyEye` 后端做测试，只验证真实 GDB 调试链路。
+- 当前阶段默认 `aarch64` 采用容器内原生测试，不强制走 QEMU。
+- 当前阶段默认 `arm32`、`thumb`、`thumb2` 采用 QEMU gdb stub + `gdb-multiarch`。
+- 当前阶段默认测试用 ELF 由仓库内自写源码编译生成。
+- 当前阶段默认需要在容器内补装 `gdb-multiarch` 和 ARM32 交叉编译工具链后，再执行 ARM32/Thumb 系列真实调试测试。
 - 默认“当前会话”指当前交互式 `gdbtrace` 会话上下文，不等同于整个操作系统 shell 生命周期。
 - 默认全局默认地址采用本机用户级持久配置方式保存。
 - 默认符号解析来源为用户提供的 ELF 或符号文件；若缺失，则降级为地址级输出。
