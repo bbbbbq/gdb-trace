@@ -184,8 +184,8 @@ ret main
 - 复杂样例规模要求：单个复杂 ELF 应至少包含多个互相调用的业务函数、多个基本块以及明显长于基础样例的指令流，用于检验长 trace 的稳定性。
 - 复杂样例输出验证：复杂 ELF 不只验证调用边界，还要对关键路径上的代表性指令段做抽样核对，确认 `inst` 与 `both` 模式下指令顺序一致。
 - 复杂 ELF 验证重点：不仅验证“能采到 trace”，还要验证在更长指令流和更复杂调用关系下，`inst`、`call`、`both` 三种模式仍然输出正确。
-- 环境准备：容器当前已有 `gdb`、`qemu-arm`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`。
-- 环境准备：容器当前缺失 `gdb-multiarch` 与 ARM32 交叉编译工具链，测试计划必须包含安装步骤。
+- 环境准备：当前开发容器已具备 `gdb`、`gdb-multiarch`、`qemu-arm`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`、`arm-linux-gnueabihf-gcc`。
+- 环境准备：在新的测试环境中，若缺失 `gdb-multiarch` 或 ARM32 交叉编译工具链，测试计划必须包含安装步骤。
 - `aarch64` 编译策略：使用容器内现有 `aarch64-linux-gnu-gcc` 编译测试 ELF。
 - `arm32` 编译策略：使用 ARM32 交叉编译器并指定 `-marm`。
 - `thumb` 编译策略：使用 ARM32 交叉编译器并指定 `-mthumb`。

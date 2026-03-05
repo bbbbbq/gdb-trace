@@ -84,14 +84,25 @@ def run() -> None:
     elf = os.environ["GDBTRACE_GDB_ELF"]
     output_path = Path(os.environ["GDBTRACE_GDB_OUTPUT"])
     max_steps = int(os.environ.get("GDBTRACE_GDB_MAX_STEPS", "4096"))
+    transport = os.environ.get("GDBTRACE_GDB_TRANSPORT", "native")
 
     gdb.execute("set pagination off")
     gdb.execute("set confirm off")
     gdb.execute("set print thread-events off")
     gdb.execute("set disassemble-next-line off")
+    gdb.execute("set debuginfod enabled off")
     gdb.execute(f'file "{elf}"')
-    gdb.execute("tbreak main")
-    gdb.execute("run")
+    if transport == "remote":
+        sysroot = os.environ.get("GDBTRACE_GDB_SYSROOT", "")
+        target = os.environ["GDBTRACE_GDB_TARGET"]
+        if sysroot:
+            gdb.execute(f'set sysroot "{sysroot}"')
+        gdb.execute(f"target remote {target}")
+        gdb.execute("tbreak main")
+        gdb.execute("continue")
+    else:
+        gdb.execute("tbreak main")
+        gdb.execute("run")
 
     stack = _relevant_stack()
     if not stack:

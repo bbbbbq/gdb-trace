@@ -12,6 +12,7 @@
 - 已完成第五批代码：采集后端抽象。
 - 已完成第六批代码：多架构日志测试覆盖。
 - 已完成第七批代码：采集结果元数据完善。
+- 已完成第八批代码：`arm32` / `thumb` / `thumb2` 的真实 QEMU gdb stub 调试链路。
 
 ## 已完成内容
 
@@ -38,6 +39,9 @@
 - 已将后端名称和过滤后事件数量纳入运行时状态与日志头元数据。
 - 已新增 `gdb-native` 真实采集后端，当前支持 `aarch64` 原生 GDB 单步采集。
 - 已新增 `test_programs/aarch64_sample.c` 与 `test_programs/aarch64_complex.c` 两个真实测试程序源码，用于基础与复杂场景验证。
+- 已新增 `gdb-qemu-arm` 真实采集后端，当前支持 `arm32`、`thumb`、`thumb2` 通过 `qemu-arm` gdb stub + `gdb-multiarch` 采集。
+- 已新增 `test_programs/arm32_sample.c`、`thumb_sample.c`、`thumb2_sample.c` 三个 ARM32 系基础样例源码。
+- 已新增 `test_programs/arm32_complex.c`、`thumb_complex.c`、`thumb2_complex.c` 三个 ARM32 系复杂样例源码。
 
 ## 当前验证状态
 
@@ -47,7 +51,7 @@
 - 已确认宿主机架构为 `Darwin arm64`。
 - 已确认指定 Docker 容器 `ubuntu` 架构为 `Linux aarch64`。
 - 已确认容器内现有工具包括：`gdb`、`qemu-arm`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`。
-- 已确认容器当前缺失：`gdb-multiarch`、ARM32 交叉编译工具链。
+- 已在 Docker 容器 `ubuntu` 内补齐 `gdb-multiarch`、`arm-linux-gnueabihf-gcc` 与 `libc6-dev-armhf-cross`。
 - 已在 Docker 容器 `ubuntu` 中通过 `python3 -m unittest discover -s tests -v` 完成配置管理相关自动化测试。
 - 已在 Docker 容器 `ubuntu` 中完成配置命令的最小手工命令验证。
 - 已在 Docker 容器 `ubuntu` 中通过 `python3 -m unittest discover -s tests -v` 完成生命周期命令相关自动化测试。
@@ -67,21 +71,21 @@
 - 已在 Docker 容器 `ubuntu` 中完成 `aarch64` 原生 GDB 真实场景自动化测试，覆盖基础样例、复杂样例、非 `aarch64` 拒绝路径。
 - 已在 Docker 容器 `ubuntu` 中以手工 CLI 流程完成 `aarch64_complex` 的 `set-* -> start -> save -> stop` 验证，并确认产出带颜色的层级化 `.log`。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 22 项自动化测试全部通过。
+- 已在 Docker 容器 `ubuntu` 中完成 `arm32`、`thumb`、`thumb2` 的 `qemu-arm` gdb stub 真实场景自动化测试，覆盖基础样例、复杂样例、非 ARM32 系拒绝路径。
+- 已在 Docker 容器 `ubuntu` 中以手工 CLI 流程完成 `thumb2_complex` 的 `set-* -> start -> save -> stop` 验证，并确认产出带颜色的层级化 `.log`。
+- 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 25 项自动化测试全部通过。
 
 ## 下一步
 
-1. 先不接 `SkyEye` 后端，优先规划并实现真实 GDB 调试链路测试。
-2. 为仓库补齐 `arm32_sample.c`、`thumb_sample.c`、`thumb2_sample.c` 三类基础测试程序源码并在容器内编译生成 ELF。
-3. 为仓库补齐 `arm32_complex.c`、`thumb_complex.c`、`thumb2_complex.c` 或等价复杂样例，用于覆盖更长指令流和更复杂调用图。
-4. 复杂样例需要覆盖深层调用链、多分支、循环、递归、间接调用、正常路径与错误路径并存等场景。
-5. `arm32`、`thumb`、`thumb2` 走 `qemu-arm` gdb stub + `gdb-multiarch` 调试测试。
-6. 在执行 ARM32/Thumb 系列真实测试前，先补齐 `gdb-multiarch` 和 ARM32 交叉编译工具链。
-7. 在 `aarch64` 已有真实后端基础上，继续扩展远程 GDB stub 采集能力，逐步替换静态样例后端在 ARM32/Thumb 系列中的占位作用。
+1. 先不接 `SkyEye` 后端，继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native` 与 `gdb-qemu-arm` 的重复实现。
+2. 将真实采集后端与静态样例后端的选择方式整理成更明确的接口或配置，避免后续接入 `SkyEye` 时继续依赖环境变量命名约定。
+3. 评估并实现基于远程 GDB stub 的通用后端抽象，为后续接入 `SkyEye` 远程目标做准备。
+4. 在现有基础样例和复杂样例之外，继续补充更深递归、更长循环和更复杂间接调用的对拍样例。
+5. 开始规划 `SkyEye` 远程目标适配所需的连接、停止条件和断连恢复处理。
 
 ## 已知阻塞或风险
 
 - 当前尚无代码目录结构，后续实现时需要先确定最小工程骨架。
-- 当前日志虽已按目标格式输出，但事件来源仍是静态样例数据，尚未接入真实指令流采集。
-- ARM32 / Thumb / Thumb2 的真实 GDB 调试测试依赖容器内补装 `gdb-multiarch` 和 ARM32 交叉编译工具链。
-- `aarch64` 真实 GDB 测试样例已落地，但 ARM32 / Thumb / Thumb2 的真实样例 ELF 仍未落地。
-- `aarch64` 复杂 ELF 样例已落地，但 ARM32 / Thumb / Thumb2 的复杂样例仍需补齐，并补充对应的预期调用图对拍资料。
+- 当前日志已支持真实 `aarch64` 与 ARM32 系采集，但默认后端仍是静态样例，尚未切换为面向真实目标的统一默认行为。
+- `SkyEye` 远程目标尚未接入，当前真实场景仅覆盖容器内原生 `gdb` 与 `qemu-arm` gdb stub。
+- 基础样例和复杂样例已经落地，但更大规模的对拍样例和预期调用图资料仍需继续补充。
