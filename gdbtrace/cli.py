@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from .capture import CaptureRequest, resolve_capture_backend
 from .filters import apply_filters
 from .formatter import render_log
 from .state import (
@@ -23,7 +24,6 @@ from .state import (
     validate_output,
     validate_target,
 )
-from .trace_model import sample_trace_events
 
 
 CommandHandler = Callable[[argparse.Namespace, Paths], int]
@@ -174,7 +174,15 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
         raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
 
     target = _resolve_target(paths, args.target)
-    source_events = sample_trace_events(session["arch"])
+    backend_name, backend = resolve_capture_backend()
+    source_events = backend.capture(
+        CaptureRequest(
+            arch=session["arch"],
+            mode=session["mode"],
+            target=target,
+            elf=session["elf"],
+        )
+    )
     filtered_events = apply_filters(
         source_events,
         start=args.start_addr or "",
@@ -192,6 +200,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             "output": session["output"],
             "mode": session["mode"],
         },
+        "capture_backend": backend_name,
         "filters": {
             "start": args.start_addr or "",
             "stop": args.stop_addr or "",
