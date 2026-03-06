@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -14,11 +15,9 @@ from .state import (
     clear_file,
     resolve_paths,
     runtime_state,
-    save_global_state,
     save_runtime_state,
     save_session_state,
     session_state,
-    global_state,
     validate_arch,
     validate_mode,
     validate_output,
@@ -49,45 +48,6 @@ def _clear_session_value(paths: Paths, key: str) -> int:
     return 0
 
 
-def cmd_set_target(args: argparse.Namespace, paths: Paths) -> int:
-    return _set_session_value(paths, "target", validate_target(args.target))
-
-
-def cmd_set_default_target(args: argparse.Namespace, paths: Paths) -> int:
-    payload = global_state(paths)
-    payload["default_target"] = validate_target(args.target)
-    save_global_state(paths, payload)
-    print(f"default_target={payload['default_target']}")
-    return 0
-
-
-def cmd_show_target(_: argparse.Namespace, paths: Paths) -> int:
-    session = session_state(paths)
-    global_cfg = global_state(paths)
-    current = session.get("target")
-    default = global_cfg.get("default_target")
-    effective = current or default
-    print(f"current_target={current or '<unset>'}")
-    print(f"default_target={default or '<unset>'}")
-    print(f"effective_target={effective or '<unset>'}")
-    return 0
-
-
-def cmd_clear_target(_: argparse.Namespace, paths: Paths) -> int:
-    return _clear_session_value(paths, "target")
-
-
-def cmd_clear_default_target(_: argparse.Namespace, paths: Paths) -> int:
-    payload = global_state(paths)
-    payload.pop("default_target", None)
-    if payload:
-        save_global_state(paths, payload)
-    else:
-        clear_file(paths.global_config_file)
-    print("cleared default_target")
-    return 0
-
-
 def cmd_set_arch(args: argparse.Namespace, paths: Paths) -> int:
     return _set_session_value(paths, "arch", validate_arch(args.arch))
 
@@ -110,7 +70,7 @@ def cmd_set_registers(args: argparse.Namespace, paths: Paths) -> int:
 
 def cmd_show_config(_: argparse.Namespace, paths: Paths) -> int:
     payload = session_state(paths)
-    for key in ("target", "arch", "elf", "output", "mode", "registers"):
+    for key in ("arch", "elf", "output", "mode", "registers"):
         print(f"{key}={payload.get(key, '<unset>')}")
     return 0
 
@@ -147,14 +107,11 @@ def _required_config(session: dict[str, str]) -> list[str]:
     return missing
 
 
-def _resolve_target(paths: Paths) -> str:
-    session = session_state(paths)
-    if session.get("target"):
-        return session["target"]
-    global_cfg = global_state(paths)
-    if global_cfg.get("default_target"):
-        return global_cfg["default_target"]
-    raise GdbTraceError("remote target is not configured")
+def _capture_target_from_env() -> str:
+    target = os.environ.get("GDBTRACE_GDB_TARGET", "")
+    if not target:
+        return ""
+    return validate_target(target)
 
 
 def _derived_call_output_path(output_path: Path) -> Path:
@@ -206,13 +163,12 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
     if missing:
         raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
 
-    target = _resolve_target(paths)
     backend = resolve_capture_backend()
     capture_result = backend.capture(
         CaptureRequest(
             arch=session["arch"],
             mode=session["mode"],
-            target=target,
+            target=_capture_target_from_env(),
             elf=session["elf"],
             registers=_capture_registers_enabled(session),
         )
@@ -227,9 +183,8 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
     new_runtime = {
         "status": "running",
         "started_at": datetime.now(timezone.utc).isoformat(),
-        "target": target,
+        "target": capture_result.target_label,
         "config": {
-            "target": target,
             "arch": session["arch"],
             "elf": session["elf"],
             "output": session["output"],
@@ -289,12 +244,6 @@ def build_parser() -> argparse.ArgumentParser:
         subparser = subparsers.add_parser(name)
         subparser.set_defaults(handler=handler)
         return subparser
-
-    add_command("set-target", cmd_set_target).add_argument("target")
-    add_command("set-default-target", cmd_set_default_target).add_argument("target")
-    add_command("show-target", cmd_show_target)
-    add_command("clear-target", cmd_clear_target)
-    add_command("clear-default-target", cmd_clear_default_target)
 
     add_command("set-arch", cmd_set_arch).add_argument("arch")
     add_command("set-elf", cmd_set_elf).add_argument("elf")

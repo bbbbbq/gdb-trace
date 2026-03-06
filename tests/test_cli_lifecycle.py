@@ -27,17 +27,19 @@ class CliLifecycleTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def run_cli(self, *args: str, env_override: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        env = dict(self.env)
+        if env_override:
+            env.update(env_override)
         return subprocess.run(
             [sys.executable, "-m", "gdbtrace", *args],
             cwd=REPO_ROOT,
-            env=self.env,
+            env=env,
             text=True,
             capture_output=True,
         )
 
     def configure_trace(self) -> None:
-        self.assertEqual(self.run_cli("set-target", "127.0.0.1:1234").returncode, 0)
         self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
@@ -49,40 +51,38 @@ class CliLifecycleTest(unittest.TestCase):
         self.assertIn("error: missing required trace config: arch, elf, output, mode", result.stdout)
 
     def test_start_reports_remaining_missing_required_config(self) -> None:
-        self.assertEqual(self.run_cli("set-target", "127.0.0.1:1234").returncode, 0)
         self.assertEqual(self.run_cli("set-arch", "thumb").returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
         result = self.run_cli("start")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error: missing required trace config: elf, mode", result.stdout)
 
-    def test_start_requires_target_to_be_preconfigured(self) -> None:
+    def test_start_no_longer_requires_target_for_static_backend(self) -> None:
         self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-mode", "both").returncode, 0)
         result = self.run_cli("start")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("error: remote target is not configured", result.stdout)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("trace started", result.stdout)
+        runtime_payload = json.loads((self.state_dir / "runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(runtime_payload["target"], "static")
+        self.assertEqual(self.run_cli("stop").returncode, 0)
 
-    def test_start_uses_default_target_when_session_target_is_unset(self) -> None:
-        self.assertEqual(self.run_cli("set-default-target", "127.0.0.1:4321").returncode, 0)
+    def test_real_backend_requires_explicit_test_harness_target(self) -> None:
         self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-mode", "both").returncode, 0)
-        started = self.run_cli("start")
-        self.assertEqual(started.returncode, 0)
-        self.assertIn("trace started", started.stdout)
-        runtime_payload = json.loads((self.state_dir / "runtime.json").read_text(encoding="utf-8"))
-        self.assertEqual(runtime_payload["target"], "127.0.0.1:4321")
-        self.assertEqual(runtime_payload["config"]["target"], "127.0.0.1:4321")
-        self.assertEqual(self.run_cli("stop").returncode, 0)
-
-    def test_start_rejects_removed_target_argument(self) -> None:
-        result = self.run_cli("start", "--target", "127.0.0.1:1234")
+        result = self.run_cli(
+            "start",
+            env_override={"GDBTRACE_CAPTURE_BACKEND": "gdb-qemu-aarch64"},
+        )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unrecognized arguments: --target 127.0.0.1:1234", result.stderr)
+        self.assertIn(
+            "error: gdb-qemu-aarch64 backend requires GDBTRACE_GDB_TARGET when started outside GDB",
+            result.stdout,
+        )
 
     def test_pause_start_save_stop_round_trip(self) -> None:
         self.configure_trace()

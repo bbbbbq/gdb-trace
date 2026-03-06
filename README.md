@@ -36,15 +36,10 @@
 
 ## 输出接口与使用方式
 
-首版建议以 CLI 作为唯一公开接口，不要求稳定的库接口。
+首版建议以 GDB 内命令作为真实 trace 的主入口；CLI 保留配置命令与静态样例能力，不要求稳定的库接口。
 
 建议 CLI 能力：
 
-- `gdbtrace set-target <ip:port>`
-- `gdbtrace set-default-target <ip:port>`
-- `gdbtrace show-target`
-- `gdbtrace clear-target`
-- `gdbtrace clear-default-target`
 - `gdbtrace set-arch <thumb|thumb2|arm32|aarch64|riscv32|riscv64>`
 - `gdbtrace set-elf <file>`
 - `gdbtrace set-output <path.log>`
@@ -68,7 +63,7 @@
 - `set-output`：设置当前会话的日志输出路径，输出文件约定为 `.log`。
 - `set-mode`：设置当前会话的追踪模式，取值为 `inst`、`call`、`both`。
 - `set-registers`：设置是否在指令行后追加通用寄存器输出，取值为 `on` 或 `off`，默认视为 `off`。
-- `show-config`：显示当前会话内 `target`、`arch`、`elf`、`output`、`mode`、`registers` 的当前值。
+- `show-config`：显示当前会话内 `arch`、`elf`、`output`、`mode`、`registers` 的当前值。
 - `clear-arch`、`clear-elf`、`clear-output`、`clear-mode`、`clear-registers`：清除当前会话中的对应配置项。
 
 生命周期命令语义：
@@ -94,24 +89,18 @@
 - `both`：除主 `both` 日志外，还会额外生成一份 `call` 日志，便于单独查看函数调用序列。
 - `both`：若 `set-registers on`，则函数体内每条指令后追加一行 `regs:`，缩进层级比所属指令再深 4 个空格。
 
-自定义指令语义：
+GDB 上下文语义：
 
-- `set-target`：设置当前会话目标地址，仅对当前 `gdbtrace` 会话有效，不写入全局持久配置。
-- `set-default-target`：设置全局默认目标地址，写入本机用户级持久配置，对后续新会话生效。
-- `show-target`：显示当前会话地址、全局默认地址、当前实际生效地址。
-- `clear-target`：清除当前会话地址；若存在全局默认地址，后续连接自动回退到全局默认地址。
-- `clear-default-target`：清除全局默认地址，不影响已经设置了当前会话地址的会话。
-
-连接地址解析规则：
-
-1. 若当前会话已通过 `set-target` 设置地址，使用当前会话地址。
-2. 否则若已通过 `set-default-target` 设置全局默认地址，使用全局默认地址。
-3. 否则报错，提示未配置远程目标地址。
+- 远程连接、`target remote`、`file`、`run`、`continue` 等动作由 GDB 原生命令负责。
+- `gdbtrace` 不管理远程目标地址，也不代替 GDB 建连。
+- `gdbtrace start` 表示“开始追踪当前 GDB inferior”，而不是“去连接某个目标地址”。
 
 `start` 校验规则：
 
-- `start` 不接受 `--target`、`--arch`、`--elf`、`--output`、`--mode`。
-- `start` 执行前必须检查当前会话是否已配置 `arch`、`elf`、`output`、`mode`。
+- `start` 不接受 `--arch`、`--elf`、`--output`、`--mode`。
+- `start` 执行前必须检查当前会话是否已配置 `output`、`mode`。
+- `start` 执行前必须能够确定 `arch`、`elf`：优先使用 `set-arch` / `set-elf`，否则尝试从当前 GDB 会话自动继承。
+- 当启用真实 GDB 会话采集时，`start` 还必须确认当前 inferior 已停在可读取指令的位置。
 - 若存在缺失项，`start` 直接失败，并一次性列出全部缺失项。
 - `pause`、`save`、`stop` 不接受新的 trace 配置参数。
 - `save` 不接受新的输出路径，始终写回 `set-output` 设置的原始路径。
@@ -250,8 +239,8 @@ ret main
 - `call` 模式：确认仅输出 `call/ret` 行，且每层嵌套固定缩进 4 个空格。
 - `both` 模式：确认 `call/ret` 与指令行组合输出，且两者都遵循统一的 4 个空格层级缩进。
 - `both` 模式：确认会生成两份 `.log` 文件，其中主日志包含 `call/ret + 指令`，派生 `call` 日志仅包含函数调用序列。
-- `set-target`、`set-arch`、`set-elf`、`set-output`、`set-mode` 后：`show-config` 能正确显示当前值。
-- 执行 `clear-target`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode` 后：`show-config` 不再显示对应值。
+- `set-arch`、`set-elf`、`set-output`、`set-mode` 后：`show-config` 能正确显示当前值。
+- 执行 `clear-arch`、`clear-elf`、`clear-output`、`clear-mode` 后：`show-config` 不再显示对应值。
 - 未配置任何项时执行 `start`：一次性报出缺失的 `arch`、`elf`、`output`、`mode`。
 - 仅配置部分项时执行 `start`：只报出剩余缺失项。
 - 全部配置完成后执行 `start`：可正常启动 trace。
@@ -274,12 +263,8 @@ ret main
 - `riscv32` / `riscv64` 验收标准：通过 QEMU stub + `gdb-multiarch` 完成真实 GDB 调试采集。
 - 测试资产验收标准：所有测试 ELF 都来自仓库内源码编译。
 - 输出验收标准：生成的 trace 与需求文档定义的 `inst` / `call` / `both` 格式一致。
-- 仅设置 `set-target` 后连接：确认使用当前会话地址。
-- 仅设置 `set-default-target` 后连接：确认新会话自动使用全局默认地址。
-- 同时设置两者后连接：确认优先使用当前会话地址。
-- 执行 `clear-target` 后连接：确认回退到全局默认地址。
-- 执行 `clear-default-target` 且当前会话无地址时：确认连接失败并给出明确提示。
-- 执行 `show-target`：确认能正确显示当前会话地址、全局默认地址和实际生效地址。
+- 在 GDB 中先完成 `file` / `target remote` / 停住 inferior，再执行 `gdbtrace start`：确认可正常启动 trace。
+- 未建立有效 GDB 调试上下文时执行 `gdbtrace start`：确认返回“当前 inferior 不可追踪”的明确错误。
 - 无 `main` 符号文件场景：验证地址级 `inst` trace 可用，且 `call` / `both` 会被拒绝。
 - 大量指令场景：验证流式输出、文件完整性、内存不失控。
 - 断连或异常停止场景：验证 trace 文件可收尾且有错误标记。
@@ -296,7 +281,6 @@ ret main
 - 当前阶段默认测试用 ELF 由仓库内自写源码编译生成。
 - 当前阶段默认需要在容器内补装 `gdb-multiarch`、ARM32 交叉编译工具链和 RISC-V 交叉编译工具链后，再执行对应真实调试测试。
 - 默认“当前会话”指当前交互式 `gdbtrace` 会话上下文，不等同于整个操作系统 shell 生命周期。
-- 默认全局默认地址采用本机用户级持久配置方式保存。
 - 默认符号解析来源为用户提供的 ELF 或符号文件；真实 backend 在缺失 `main` 符号时降级为地址级 `inst` 输出，不生成函数调用序列。
 - 默认文本输出关键词固定使用 `call` 和 `ret`，不采用其他同义词。
 - 默认“开启函数调用序列”对应 `set-mode both` 或等价开启调用序列的模式。
@@ -304,7 +288,7 @@ ret main
 - 默认 `call` 与 `both` 的缩进规则统一固定为每层 4 个空格。
 - 默认 `both` 中函数体内的指令行相对所属 `call <func>` 行下沉一层显示。
 - 默认 `set-arch`、`set-elf`、`set-output`、`set-mode` 均仅对当前 `gdbtrace` 会话生效，不做全局持久化。
-- 默认 `target` 的会话级与全局默认机制保持不变，本轮只将 `arch`、`elf`、`output`、`mode` 抽为独立命令。
+- 默认远程连接完全由 GDB 原生命令管理，`gdbtrace` 不再维护目标地址配置。
 - 默认不新增 `resume`，恢复语义并入 `start`。
 - 默认同一时刻只允许一个活动 trace，因此不引入 `trace-id`。
 - 默认首版完全删除 `JSONL` 输出要求，仅保留彩色 `.log` 文件输出。

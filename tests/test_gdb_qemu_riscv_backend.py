@@ -69,7 +69,7 @@ class QemuRiscvBackendTest(unittest.TestCase):
         return output_path
 
     def configure(self, arch: str, elf_path: Path, output_path: Path, mode: str) -> None:
-        self.assertEqual(self.run_cli("set-target", PORTS[arch]).returncode, 0)
+        self.env["GDBTRACE_GDB_TARGET"] = PORTS[arch]
         self.assertEqual(self.run_cli("set-arch", arch).returncode, 0)
         self.assertEqual(self.run_cli("set-elf", str(elf_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(output_path)).returncode, 0)
@@ -131,7 +131,7 @@ class QemuRiscvBackendTest(unittest.TestCase):
         elf_path = self.state_dir / "dummy"
         elf_path.write_text("", encoding="utf-8")
         output_path = self.state_dir / "arm32.log"
-        self.assertEqual(self.run_cli("set-target", "127.0.0.1:25099").returncode, 0)
+        self.env["GDBTRACE_GDB_TARGET"] = "127.0.0.1:25099"
         self.assertEqual(self.run_cli("set-arch", "arm32").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", str(elf_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(output_path)).returncode, 0)

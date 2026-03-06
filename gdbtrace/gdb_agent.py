@@ -46,7 +46,7 @@ def _current_symbol_name() -> str:
     return _normalized_frame_name(symbol)
 
 
-def _relevant_stack() -> list[str]:
+def _relevant_stack(require_main: bool = True) -> list[str]:
     names: list[str] = []
     found_main = False
     backtrace = gdb.execute("bt", to_string=True)
@@ -62,7 +62,7 @@ def _relevant_stack() -> list[str]:
         if normalized_name == "main":
             found_main = True
             break
-    if not found_main:
+    if require_main and not found_main:
         return []
     _, instruction_symbol, _ = _instruction_details()
     current_symbol = instruction_symbol or _current_symbol_name()
@@ -265,6 +265,72 @@ def _step_until_exit(max_steps: int, events: list[dict[str, object]], arch: str,
         if exited:
             break
     return steps
+
+
+def capture_current_session(
+    arch: str,
+    mode: str,
+    register_output: bool,
+    max_steps: int,
+) -> list[dict[str, object]]:
+    gdb.execute("set pagination off")
+    gdb.execute("set confirm off")
+    gdb.execute("set print thread-events off")
+    gdb.execute("set disassemble-next-line off")
+    gdb.execute("set debuginfod enabled off")
+
+    try:
+        _current_instruction()
+    except gdb.error as exc:
+        if "No registers" in str(exc):
+            raise RuntimeError("current inferior is not stopped at a debuggable location") from exc
+        raise RuntimeError("failed to inspect current inferior state") from exc
+
+    events: list[dict[str, object]] = []
+    if mode == "inst":
+        steps = _step_until_exit(max_steps, events, arch, register_output)
+        if steps >= max_steps:
+            raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
+        return events
+
+    stack = _relevant_stack(require_main=False)
+    if not stack:
+        raise RuntimeError("failed to determine current call stack")
+
+    _emit_call_events(events, stack)
+
+    steps = 0
+    while steps < max_steps:
+        current_stack = list(stack)
+        if not current_stack:
+            break
+
+        pc, instruction = _current_instruction()
+        registers, exited = _step_and_capture_registers(arch, register_output)
+        events.append(
+            {
+                "kind": "inst",
+                "depth": len(current_stack),
+                "function": current_stack[-1],
+                "pc": pc,
+                "instruction": instruction,
+                "registers": registers,
+            }
+        )
+        steps += 1
+        if exited:
+            break
+
+        observed_stack = _relevant_stack(require_main=False)
+        next_stack = _next_stack(current_stack, observed_stack, instruction)
+        _emit_stack_transition(events, current_stack, next_stack)
+        stack = next_stack
+
+    if steps >= max_steps:
+        raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
+
+    _emit_stack_transition(events, stack, [])
+    return events
 
 
 def run() -> None:

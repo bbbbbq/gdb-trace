@@ -13,24 +13,19 @@ INIT_SCRIPT = REPO_ROOT / "gdbtrace" / "gdb_init.py"
 EXPECTED_USER_COMMANDS = (
     "gdbtrace -- gdbtrace command namespace.",
     "gdbtrace clear-arch",
-    "gdbtrace clear-default-target",
     "gdbtrace clear-elf",
     "gdbtrace clear-mode",
     "gdbtrace clear-output",
     "gdbtrace clear-registers",
-    "gdbtrace clear-target",
     "gdbtrace pause",
     "gdbtrace run",
     "gdbtrace save",
     "gdbtrace set-arch",
-    "gdbtrace set-default-target",
     "gdbtrace set-elf",
     "gdbtrace set-mode",
     "gdbtrace set-output",
     "gdbtrace set-registers",
-    "gdbtrace set-target",
     "gdbtrace show-config",
-    "gdbtrace show-target",
     "gdbtrace start",
     "gdbtrace stop",
 )
@@ -112,14 +107,12 @@ class GdbInitInstallTest(unittest.TestCase):
                 "-q",
                 input_text=(
                     "set pagination off\n"
-                    "help gdbtrace set-target\n"
-                    "gdbtrace set-target 127.0.0.1:1234\n"
+                    "help gdbtrace set-output\n"
                     "gdbtrace set-arch aarch64\n"
                     "gdbtrace set-elf demo.elf\n"
                     "gdbtrace set-output trace.log\n"
                     "gdbtrace set-mode both\n"
                     "gdbtrace show-config\n"
-                    "gdbtrace show-target\n"
                     "gdbtrace start\n"
                     "gdbtrace save\n"
                     "gdbtrace stop\n"
@@ -130,13 +123,12 @@ class GdbInitInstallTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
-            self.assertIn("Set the current session target. Usage: gdbtrace set-target <ip:port>", result.stdout)
-            self.assertIn("target=127.0.0.1:1234", result.stdout)
+            self.assertIn("Set the current session log path. Usage: gdbtrace set-output <path.log>", result.stdout)
             self.assertIn("arch=aarch64", result.stdout)
             self.assertIn("elf=demo.elf", result.stdout)
             self.assertIn("output=trace.log", result.stdout)
             self.assertIn("mode=both", result.stdout)
-            self.assertIn("effective_target=127.0.0.1:1234", result.stdout)
+            self.assertNotIn("target=", result.stdout)
             self.assertIn("trace started", result.stdout)
             self.assertIn("trace saved to trace.log, trace.call.log", result.stdout)
             self.assertIn("trace stopped and saved to trace.log, trace.call.log", result.stdout)
@@ -210,7 +202,6 @@ class GdbInitInstallTest(unittest.TestCase):
                 input_text=(
                     "set pagination off\n"
                     "file /bin/true\n"
-                    "gdbtrace set-target 127.0.0.1:1234\n"
                     "gdbtrace set-arch aarch64\n"
                     "gdbtrace set-output infer.log\n"
                     "gdbtrace set-mode both\n"
@@ -264,7 +255,6 @@ class GdbInitInstallTest(unittest.TestCase):
                     "set pagination off\n"
                     "set architecture aarch64\n"
                     "file /bin/true\n"
-                    "gdbtrace set-target 127.0.0.1:1234\n"
                     "gdbtrace set-output infer_arch.log\n"
                     "gdbtrace set-mode both\n"
                     "gdbtrace start\n"
@@ -285,6 +275,47 @@ class GdbInitInstallTest(unittest.TestCase):
 
             session_payload = json.loads((workdir / "session.json").read_text(encoding="utf-8"))
             self.assertEqual(session_payload["arch"], "aarch64")
+
+    def test_gdbtrace_start_requires_debuggable_current_inferior(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_home, tempfile.TemporaryDirectory() as temp_workdir:
+            workdir = Path(temp_workdir)
+            gdbinit_path = Path(temp_home) / ".gdbinit"
+            gdbinit_path.write_text(
+                "\n".join(
+                    [
+                        "python",
+                        "import runpy",
+                        f"runpy.run_path({str(INIT_SCRIPT)!r}, run_name='__main__')",
+                        "end",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            env.pop("PYTHONPATH", None)
+            env["GDBTRACE_GLOBAL_CONFIG"] = str(workdir / "global.json")
+            env["GDBTRACE_SESSION_FILE"] = str(workdir / "session.json")
+            env["GDBTRACE_RUNTIME_FILE"] = str(workdir / "runtime.json")
+
+            result = self.run_gdb(
+                "-q",
+                input_text=(
+                    "gdbtrace set-arch aarch64\n"
+                    "gdbtrace set-elf demo.elf\n"
+                    "gdbtrace set-output trace.log\n"
+                    "gdbtrace set-mode both\n"
+                    "gdbtrace start\n"
+                    "quit\n"
+                ),
+                env=env,
+                cwd=workdir,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            self.assertIn("current inferior is not stopped at a debuggable location", result.stderr)
 
 
 if __name__ == "__main__":

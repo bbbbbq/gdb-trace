@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import os
 import re
 import sys
 from pathlib import Path
@@ -12,11 +13,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 INSTALL_SENTINEL = "_gdbtrace_gdb_init_installed"
 GDBTRACE_PREFIX = "gdbtrace"
 CLI_COMMAND_DOCS = {
-    "set-target": "Set the current session target. Usage: gdbtrace set-target <ip:port>",
-    "set-default-target": "Set the default target. Usage: gdbtrace set-default-target <ip:port>",
-    "show-target": "Show current, default, and effective target addresses.",
-    "clear-target": "Clear the current session target.",
-    "clear-default-target": "Clear the default target address.",
     "set-arch": "Set the trace architecture. Usage: gdbtrace set-arch <thumb|thumb2|arm32|aarch64|riscv32|riscv64>",
     "set-elf": "Set the current session ELF path. Usage: gdbtrace set-elf <file>",
     "set-output": "Set the current session log path. Usage: gdbtrace set-output <path.log>",
@@ -58,6 +54,15 @@ def _current_arch_from_gdb() -> str:
     return ""
 
 
+def _ensure_current_inferior_ready() -> None:
+    try:
+        gdb.execute("x/i $pc", to_string=True)
+    except gdb.error as exc:
+        if "No registers" in str(exc):
+            raise gdb.GdbError("error: current inferior is not stopped at a debuggable location") from None
+        raise
+
+
 def _invoke_cli_command(name: str, arg: str) -> None:
     _ensure_repo_on_sys_path()
     from gdbtrace.cli import build_parser
@@ -66,6 +71,7 @@ def _invoke_cli_command(name: str, arg: str) -> None:
     parser = build_parser()
     argv = [name, *gdb.string_to_argv(arg)]
     paths = resolve_paths()
+    previous_backend = os.environ.get("GDBTRACE_CAPTURE_BACKEND")
 
     if name == "start":
         session = session_state(paths)
@@ -79,6 +85,10 @@ def _invoke_cli_command(name: str, arg: str) -> None:
                 session["elf"] = current_elf
         if session.get("arch") or session.get("elf"):
             save_session_state(paths, session)
+        if not previous_backend:
+            os.environ["GDBTRACE_CAPTURE_BACKEND"] = "gdb-current-session"
+        if os.environ.get("GDBTRACE_CAPTURE_BACKEND") != "static":
+            _ensure_current_inferior_ready()
 
     try:
         parsed = parser.parse_args(argv)
@@ -90,6 +100,12 @@ def _invoke_cli_command(name: str, arg: str) -> None:
         if code:
             raise gdb.GdbError(f"invalid arguments for {name}") from None
         return
+    finally:
+        if name == "start":
+            if previous_backend is None:
+                os.environ.pop("GDBTRACE_CAPTURE_BACKEND", None)
+            else:
+                os.environ["GDBTRACE_CAPTURE_BACKEND"] = previous_backend
     if return_code:
         raise gdb.GdbError(f"gdbtrace command failed: {name}")
 

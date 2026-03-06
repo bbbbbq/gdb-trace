@@ -51,7 +51,6 @@ help gdbtrace
 安装完成后，GDB 内可直接使用与 CLI 一致的命令名，例如：
 
 ```gdb
-gdbtrace set-target 127.0.0.1:1234
 gdbtrace set-arch aarch64
 gdbtrace set-elf demo.elf
 gdbtrace set-output trace.log
@@ -78,19 +77,9 @@ gdbtrace run
 
 `gdbtrace` 采用“先配置，后启动”的模型。
 
-常用命令分为三组：
+常用命令分为两组：
 
-1. 目标地址配置
-
-```bash
-python3 -m gdbtrace set-target <ip:port>
-python3 -m gdbtrace set-default-target <ip:port>
-python3 -m gdbtrace show-target
-python3 -m gdbtrace clear-target
-python3 -m gdbtrace clear-default-target
-```
-
-2. 当前会话配置
+1. 当前会话配置
 
 ```bash
 python3 -m gdbtrace set-arch <thumb|thumb2|arm32|aarch64|riscv32|riscv64>
@@ -106,7 +95,7 @@ python3 -m gdbtrace clear-mode
 python3 -m gdbtrace clear-registers
 ```
 
-3. 生命周期命令
+2. 生命周期命令
 
 ```bash
 python3 -m gdbtrace start [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]
@@ -117,15 +106,14 @@ python3 -m gdbtrace stop
 
 说明：
 
-- 远程目标地址必须先通过 `set-target` 或 `set-default-target` 配置。
-- `show-config` 现在会显示当前会话 `target`，`show-target` 继续用于查看当前值、默认值和实际生效值。
+- 远程连接由 GDB 原生命令负责，`gdbtrace` 不再维护目标地址配置。
+- `show-config` 只显示追踪相关配置，不显示远程连接状态。
 
 ## 最小示例
 
 以下示例使用默认静态后端，不依赖真实 GDB 目标。
 
 ```bash
-python3 -m gdbtrace set-target 127.0.0.1:1234
 python3 -m gdbtrace set-arch aarch64
 python3 -m gdbtrace set-elf demo.elf
 python3 -m gdbtrace set-output ./demo.log
@@ -244,8 +232,8 @@ aarch64-linux-gnu-gcc -g -O0 -fno-omit-frame-pointer -no-pie \
 ```bash
 export GDBTRACE_CAPTURE_BACKEND=gdb-qemu-aarch64
 export GDBTRACE_GDB_MAX_STEPS=20000
+export GDBTRACE_GDB_TARGET=127.0.0.1:23064
 
-python3 -m gdbtrace set-target 127.0.0.1:23064
 python3 -m gdbtrace set-arch aarch64
 python3 -m gdbtrace set-elf /tmp/aarch64_sample
 python3 -m gdbtrace set-output ./aarch64_sample.log
@@ -271,8 +259,8 @@ arm-linux-gnueabihf-gcc -g -O0 -fno-omit-frame-pointer -marm \
 ```bash
 export GDBTRACE_CAPTURE_BACKEND=gdb-qemu-arm
 export GDBTRACE_GDB_MAX_STEPS=20000
+export GDBTRACE_GDB_TARGET=127.0.0.1:24001
 
-python3 -m gdbtrace set-target 127.0.0.1:24001
 python3 -m gdbtrace set-arch arm32
 python3 -m gdbtrace set-elf /tmp/arm32_sample
 python3 -m gdbtrace set-output ./arm32_sample.log
@@ -304,8 +292,8 @@ riscv64-linux-gnu-gcc -g -O0 -fno-omit-frame-pointer -march=rv64gc -mabi=lp64d \
 ```bash
 export GDBTRACE_CAPTURE_BACKEND=gdb-qemu-riscv
 export GDBTRACE_GDB_MAX_STEPS=20000
+export GDBTRACE_GDB_TARGET=127.0.0.1:26064
 
-python3 -m gdbtrace set-target 127.0.0.1:26064
 python3 -m gdbtrace set-arch riscv64
 python3 -m gdbtrace set-elf /tmp/riscv64_sample
 python3 -m gdbtrace set-output ./riscv64_sample.log
@@ -331,8 +319,8 @@ arm-linux-gnueabihf-gcc -g -O0 -fno-omit-frame-pointer -Wl,-z,now -marm \
 export GDBTRACE_CAPTURE_BACKEND=gdb-qemu-arm
 export GDBTRACE_GDB_MAX_STEPS=20000
 export LD_BIND_NOW=1
+export GDBTRACE_GDB_TARGET=127.0.0.1:24101
 
-python3 -m gdbtrace set-target 127.0.0.1:24101
 python3 -m gdbtrace set-arch arm32
 python3 -m gdbtrace set-elf /tmp/userspace_printf_arm32
 python3 -m gdbtrace set-output ./arm32_printf.log
@@ -394,14 +382,16 @@ sed -n '1,80p' ./arm32_printf.call.log
 python3 -m gdbtrace show-config
 ```
 
-### 2. `remote target is not configured`
+### 2. `current inferior is not stopped at a debuggable location`
 
-说明没有可用的目标地址。
+说明当前 GDB 会话里还没有可追踪的 inferior，或者程序没有停在可读取 `$pc` 的位置。
 
-检查：
+先在 GDB 中完成：
 
-```bash
-python3 -m gdbtrace show-target
+```gdb
+file /path/to/program
+target remote <ip:port>
+# 或者本地 run/starti 到断点处
 ```
 
 ### 3. 为什么日志里出现 `sub_<addr>`

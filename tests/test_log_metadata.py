@@ -36,7 +36,6 @@ class LogMetadataTest(unittest.TestCase):
         )
 
     def test_log_header_includes_capture_backend_and_event_count(self) -> None:
-        self.assertEqual(self.run_cli("set-target", "127.0.0.1:1234").returncode, 0)
         self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)

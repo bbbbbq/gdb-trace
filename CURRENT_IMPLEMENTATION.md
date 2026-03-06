@@ -3,6 +3,7 @@
 ## 当前状态
 
 - 当前仓库已进入最小代码实现阶段。
+- 第二十五批代码已完成：已删除 target 配置命令，`gdbtrace start` 现按当前 GDB 会话状态判定是否允许启动。
 - 第二十批代码已完成：真实后端测试已统一切换为 QEMU 路径，AArch64 现通过 `qemu-aarch64` gdb stub 验证。
 - 第二十四批代码已完成：远程目标已彻底收敛为配置项，`start` 不再接受 `--target`。
 - 第二十三批代码已完成：GDB 会话中未显式 `set-arch` 时可自动继承当前已设置架构。
@@ -37,9 +38,8 @@
 - 明确了输出模式：`inst`、`call`、`both`。
 - 明确了日志输出格式：彩色 `.log` 文件，ANSI 颜色直接写入。
 - 明确了 CLI 模型：预配置命令 + `start/pause/save/stop` 生命周期命令。
-- 明确了目标地址配置模型：当前会话优先，回退到全局默认配置。
+- 明确了远程连接职责边界：远程建连由 GDB 原生命令负责，`gdbtrace` 只消费当前调试会话。
 - 已建立 Python CLI 最小工程骨架。
-- 已实现目标地址配置命令：`set-target`、`set-default-target`、`show-target`、`clear-target`、`clear-default-target`。
 - 已实现会话级配置命令：`set-arch`、`set-elf`、`set-output`、`set-mode`、`show-config`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode`。
 - 已实现会话级寄存器输出配置命令：`set-registers`、`clear-registers`，用于控制是否在指令后输出通用寄存器。
 - 已实现生命周期命令：`start`、`pause`、`save`、`stop`。
@@ -82,13 +82,14 @@
 - 已新增 `gdbtrace/gdb_init.py`，可供 GDB 通过 `runpy.run_path(...)` 加载，并注册 `gdbtrace-run` 用户命令。
 - 已完成当前用户 `~/.gdbinit` 的最小安装接入，使本机 GDB 启动后自动加载 `gdbtrace` 初始化脚本。
 - 已补充 `tests/test_gdb_init.py`，覆盖 `gdb_init.py` 的重复加载、命令注册，以及用户级 `~/.gdbinit` 自动加载场景。
-- 已在 `gdbtrace/gdb_init.py` 中注册与 CLI 一致的 GDB 用户命令：`set-target`、`set-default-target`、`show-target`、`clear-target`、`clear-default-target`、`set-arch`、`set-elf`、`set-output`、`set-mode`、`set-registers`、`show-config`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode`、`clear-registers`、`start`、`pause`、`save`、`stop`。
+- 已在 `gdbtrace/gdb_init.py` 中注册与 CLI 一致的 GDB 用户命令：`set-arch`、`set-elf`、`set-output`、`set-mode`、`set-registers`、`show-config`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode`、`clear-registers`、`start`、`pause`、`save`、`stop`。
 - 已让 GDB 用户命令复用现有 CLI handler、状态文件与校验逻辑，避免形成第二套命令实现。
-- 已将 GDB 用户命令统一收敛到 `gdbtrace <subcommand>` 命名空间下，包括 `gdbtrace set-target`、`gdbtrace start`、`gdbtrace stop` 和低层 `gdbtrace run`。
+- 已将 GDB 用户命令统一收敛到 `gdbtrace <subcommand>` 命名空间下，包括 `gdbtrace set-arch`、`gdbtrace start`、`gdbtrace stop` 和低层 `gdbtrace run`。
 - 已在 GDB 命令桥接层加入 ELF 自动继承：若当前 GDB 已通过 `file <elf>` 加载程序，且未执行 `gdbtrace set-elf`，则 `gdbtrace start` 会自动写入并使用该 ELF。
 - 已在 GDB 命令桥接层加入架构自动继承：若当前 GDB 已设置 `aarch64`、`arm`、`riscv:rv32` 或 `riscv:rv64` 等可映射架构，且未执行 `gdbtrace set-arch`，则 `gdbtrace start` 会自动写入并使用对应 `gdbtrace` 架构名。
-- 已将远程目标正式纳入会话配置视图，`show-config` 现会显示 `target`，并保持 `show-target` 继续展示当前值、默认值与实际生效值。
-- 已移除 `start --target` 临时覆盖入口；当前远程目标只能通过 `set-target` 或 `set-default-target` 预配置。
+- 已移除全部 target 配置命令与 `show-target` 视图；当前远程目标不再由 `gdbtrace` 维护。
+- 已让 GDB 内 `start` 默认走 `gdb-current-session` 后端，并要求当前 inferior 已停在可读取指令的位置。
+- 已将 CLI 真实后端的远程地址收敛为仅供测试/低层调用使用的 `GDBTRACE_GDB_TARGET` 环境变量，不再暴露为主命令接口。
 
 ## 当前验证状态
 
@@ -163,8 +164,10 @@
 - 已在原生 Ubuntu 环境执行 `python3 -m unittest tests.test_gdb_qemu_aarch64_backend -v`，当前 6 项 `aarch64` QEMU 真实后端测试全部通过。
 - 已在原生 Ubuntu 环境执行 `python3 -m unittest tests.test_gdb_qemu_aarch64_backend tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_can_emit_registers_for_arm32 tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_captures_basic_samples_for_riscv -v`，当前 8 项代表性真实后端回归全部通过，并确认 AArch64、ARM32、RISC-V 真实测试链路均已走 QEMU。
 - 当前环境缺少 `docker` 可执行文件，本轮未能进入指定容器 `ubuntu` 执行安装与验证；该阻塞已记录。
-- 已在宿主机执行 `python3 -m unittest tests.test_cli_config tests.test_cli_lifecycle tests.test_gdb_init -v`，覆盖 `show-config` 中的 `target` 展示、默认目标回退、`start --target` 拒绝路径，以及 GDB 帮助文案同步。
-- 已在宿主机执行真实交互式 GDB 会话，确认 `gdbtrace show-config` 会显示 `target=<...>`，且 `gdbtrace start --target ...` 会直接报参数错误。
+- 已在宿主机执行 `python3 -m unittest tests.test_cli_config tests.test_cli_lifecycle tests.test_capture_backend tests.test_log_formatting tests.test_log_metadata tests.test_arch_samples tests.test_trace_filters tests.test_gdb_init -v`，当前与本轮接口收缩和 `start` 语义重定义直接相关的 32 项测试全部通过。
+- 已在宿主机执行 `python3 -m compileall gdbtrace tests`，确认本轮修改后的核心模块与测试文件均可正常编译。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_qemu_aarch64_backend.QemuAarch64BackendTest.test_qemu_backend_captures_basic_aarch64_sample -v`，确认删除 `set-target` 后，现有 QEMU AArch64 真实后端仍可通过 `GDBTRACE_GDB_TARGET` 低层测试通道正常工作。
+- 已在宿主机执行真实交互式 GDB 会话，确认 `gdbtrace show-config` 不再显示 `target`，且在未建立可追踪 inferior 时 `gdbtrace start` 会直接报 `current inferior is not stopped at a debuggable location`。
 
 ## 下一步
 

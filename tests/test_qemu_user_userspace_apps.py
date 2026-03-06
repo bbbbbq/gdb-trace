@@ -102,7 +102,7 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
         return output_path, file_result.stdout
 
     def configure(self, target: str, arch: str, elf_path: Path, output_path: Path, env_override: dict[str, str]) -> str:
-        self.assertEqual(self.run_cli("set-target", target, env_override=env_override).returncode, 0)
+        env_override["GDBTRACE_GDB_TARGET"] = target
         self.assertEqual(self.run_cli("set-arch", arch, env_override=env_override).returncode, 0)
         self.assertEqual(self.run_cli("set-elf", str(elf_path), env_override=env_override).returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(output_path), env_override=env_override).returncode, 0)

@@ -24,6 +24,7 @@ class CaptureRequest:
 @dataclass(frozen=True)
 class CaptureResult:
     backend: str
+    target_label: str
     events: list[TraceEvent]
     event_count: int
 
@@ -42,6 +43,7 @@ class StaticSampleCaptureBackend(CaptureBackend):
         events = sample_trace_events(request.arch, include_registers=request.registers)
         return CaptureResult(
             backend=self.name,
+            target_label="static",
             events=events,
             event_count=len(events),
         )
@@ -119,11 +121,35 @@ class NativeGdbCaptureBackend(CaptureBackend):
             events = [TraceEvent(**event) for event in raw_events]
             return CaptureResult(
                 backend=self.name,
+                target_label="local",
                 events=events,
                 event_count=len(events),
             )
         finally:
             output_path.unlink(missing_ok=True)
+
+
+class CurrentGdbSessionCaptureBackend(CaptureBackend):
+    name = "gdb-current-session"
+
+    def capture(self, request: CaptureRequest) -> CaptureResult:
+        try:
+            from .gdb_agent import capture_current_session
+        except ModuleNotFoundError as exc:
+            raise GdbTraceError("gdb-current-session backend must run inside GDB") from exc
+
+        events = capture_current_session(
+            arch=request.arch,
+            mode=request.mode,
+            register_output=request.registers,
+            max_steps=int(os.environ.get("GDBTRACE_GDB_MAX_STEPS", "4096")),
+        )
+        return CaptureResult(
+            backend=self.name,
+            target_label="gdb-managed",
+            events=events,
+            event_count=len(events),
+        )
 
 
 class QemuRemoteCaptureBackend(CaptureBackend):
@@ -140,6 +166,10 @@ class QemuRemoteCaptureBackend(CaptureBackend):
 
     def capture(self, request: CaptureRequest) -> CaptureResult:
         self._validate_arch(request)
+        if not request.target:
+            raise GdbTraceError(
+                f"{self.name} backend requires GDBTRACE_GDB_TARGET when started outside GDB"
+            )
         elf_path = Path(request.elf)
         if not elf_path.exists():
             raise GdbTraceError(f"elf file does not exist: {request.elf}")
@@ -202,6 +232,7 @@ class QemuRemoteCaptureBackend(CaptureBackend):
             events = [TraceEvent(**event) for event in raw_events]
             return CaptureResult(
                 backend=self.name,
+                target_label=request.target,
                 events=events,
                 event_count=len(events),
             )
@@ -307,6 +338,8 @@ def resolve_capture_backend() -> CaptureBackend:
     backend_name = os.environ.get("GDBTRACE_CAPTURE_BACKEND", "static")
     if backend_name == "static":
         return StaticSampleCaptureBackend()
+    if backend_name == "gdb-current-session":
+        return CurrentGdbSessionCaptureBackend()
     if backend_name == "gdb-native":
         return NativeGdbCaptureBackend()
     if backend_name == "gdb-qemu-aarch64":

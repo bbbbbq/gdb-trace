@@ -59,7 +59,7 @@ class QemuAarch64BackendTest(unittest.TestCase):
         return output_path
 
     def configure(self, elf_path: Path, output_path: Path, mode: str, registers: str = "off") -> None:
-        self.assertEqual(self.run_cli("set-target", AARCH64_PORT).returncode, 0)
+        self.env["GDBTRACE_GDB_TARGET"] = AARCH64_PORT
         self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", str(elf_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(output_path)).returncode, 0)
@@ -158,7 +158,7 @@ class QemuAarch64BackendTest(unittest.TestCase):
     def test_qemu_backend_rejects_non_aarch64_arch(self) -> None:
         elf_path = self.compile_program("aarch64_sample.c")
         output_path = self.state_dir / "arm32.log"
-        self.assertEqual(self.run_cli("set-target", AARCH64_PORT).returncode, 0)
+        self.env["GDBTRACE_GDB_TARGET"] = AARCH64_PORT
         self.assertEqual(self.run_cli("set-arch", "arm32").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", str(elf_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(output_path)).returncode, 0)
