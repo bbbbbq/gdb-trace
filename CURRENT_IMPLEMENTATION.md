@@ -20,6 +20,7 @@
 - 已完成第十三批代码：动态库调用去除 `@plt` 边界并补充地址级子调用。
 - 已完成第十四批代码：独立使用指南文档。
 - 已完成第十五批代码：可选的通用寄存器输出。
+- 已完成第十六批代码：GDB 用户级安装入口与初始化加载。
 
 ## 已完成内容
 
@@ -65,6 +66,8 @@
 - 已实现动态库调用名归一化：优先展示真实函数名，不将 `foo@plt` 单独作为最终调用边界；在缺少稳定符号名时补充地址型函数名 `sub_<addr>`。
 - 已新增 [USAGE.md](/Users/caojunze424/code/gdb_trace/USAGE.md)，集中说明 CLI 配置流程、真实后端示例、日志输出规则和常见问题。
 - 已在事件模型、真实 GDB 后端和日志格式化层中接入可选寄存器输出；开启后，`inst` 与 `both` 模式会在每条指令后追加 `regs:` 行。
+- 已新增 `gdbtrace/gdb_init.py`，可供 GDB 通过 `runpy.run_path(...)` 加载，并注册 `gdbtrace-run` 用户命令。
+- 已完成当前用户 `~/.gdbinit` 的最小安装接入，使本机 GDB 启动后自动加载 `gdbtrace` 初始化脚本。
 
 ## 当前验证状态
 
@@ -116,13 +119,17 @@
 - 已补充寄存器输出开关与日志格式说明。
 - 已在 Docker 容器 `ubuntu` 中完成寄存器输出相关自动化测试，覆盖静态样例、`gdb-native` `aarch64` 和 `gdb-qemu-arm` `arm32` 三条链路。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 41 项自动化测试全部通过。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_init -v`，确认 GDB 初始化脚本可重复加载，且成功注册 `gdbtrace-run`。
+- 已在宿主机执行 `gdb -q -batch -ex "help user-defined"`，确认普通启动 GDB 后已自动出现 `gdbtrace-run`。
+- 当前环境缺少 `docker` 可执行文件，本轮未能进入指定容器 `ubuntu` 执行安装与验证；该阻塞已记录。
 
 ## 下一步
 
-1. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
-2. 为 `riscv32` / `riscv64` 补齐无 `main` 符号 ELF 的真实自动化测试，统一各架构退化行为。
-3. 继续扩展更大规模的用户态和复杂 ELF 样例，补强长指令流与复杂调用图回归。
-4. 开始规划 `SkyEye` 远程目标适配所需的连接、停止条件和断连恢复处理。
+1. 在 `docker` 能力恢复后，于指定容器 `ubuntu` 中补齐本轮 GDB 安装与验证。
+2. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
+3. 为 `riscv32` / `riscv64` 补齐无 `main` 符号 ELF 的真实自动化测试，统一各架构退化行为。
+4. 继续扩展更大规模的用户态和复杂 ELF 样例，补强长指令流与复杂调用图回归。
+5. 开始规划 `SkyEye` 远程目标适配所需的连接、停止条件和断连恢复处理。
 
 ## 已知阻塞或风险
 
@@ -130,3 +137,4 @@
 - `SkyEye` 远程目标尚未接入，当前真实场景仅覆盖容器内原生 `gdb`、`qemu-arm` gdb stub 与 `qemu-riscv` gdb stub。
 - 基础样例和复杂样例已经落地，但更大规模的对拍样例和预期调用图资料仍需继续补充。
 - 动态链接用户态程序在部分架构上会较早进入 PLT/动态装载相关路径，当前 trace 能稳定覆盖关键业务函数和部分 `libc` 调用边界，但对更深层库内部执行流的还原仍有限。
+- 当前执行环境缺少 `docker` 命令，本轮无法按约定进入容器 `ubuntu` 完成安装验证；容器侧状态需在具备 `docker` 能力后补测。

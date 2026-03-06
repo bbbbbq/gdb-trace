@@ -31,6 +31,25 @@ cd /code/gdb_trace
 - `arm-linux-gnueabihf-gcc`
 - `riscv64-linux-gnu-gcc`
 
+## 安装到 GDB
+
+如果希望在 GDB 启动后直接拥有 `gdbtrace-run` 命令，可让 GDB 加载仓库内初始化脚本：
+
+```gdb
+python
+import runpy
+runpy.run_path("/path/to/gdb-trace/gdbtrace/gdb_init.py", run_name="__main__")
+end
+```
+
+建议把这段加入用户级 `~/.gdbinit`。加载完成后，可在 GDB 中执行：
+
+```gdb
+help gdbtrace-run
+```
+
+`gdbtrace-run` 会调用 `gdbtrace.gdb_agent.run()`，并继续使用现有的 `GDBTRACE_GDB_*` 环境变量约定。
+
 ## CLI 模型
 
 `gdbtrace` 采用“先配置，后启动”的模型。
