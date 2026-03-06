@@ -64,6 +64,8 @@ gdbtrace stop
 
 在 GDB 会话中，如果你已经先执行了 `file /path/to/program`，那么 `gdbtrace start` 在未显式执行 `gdbtrace set-elf` 时，会自动继承当前已加载的 ELF。
 
+同样地，如果你在 `gdb-multiarch` 或支持对应架构字符串的 GDB 中已经先执行了 `set architecture aarch64`、`set architecture arm`、`set architecture riscv:rv32` 或 `set architecture riscv:rv64`，那么 `gdbtrace start` 在未显式执行 `gdbtrace set-arch` 时，也会自动继承当前架构设置。`thumb` / `thumb2` 目前仍建议显式执行 `gdbtrace set-arch`。
+
 如果需要直接调用低层 agent，也可使用：
 
 ```gdb

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import re
 import sys
 from pathlib import Path
 
@@ -40,6 +41,23 @@ def _ensure_repo_on_sys_path() -> None:
         sys.path.insert(0, repo_root)
 
 
+def _current_elf_from_gdb() -> str:
+    return gdb.current_progspace().filename or ""
+
+
+def _current_arch_from_gdb() -> str:
+    show_arch_output = gdb.execute("show architecture", to_string=True).lower()
+    if "aarch64" in show_arch_output:
+        return "aarch64"
+    if "riscv:rv64" in show_arch_output:
+        return "riscv64"
+    if "riscv:rv32" in show_arch_output:
+        return "riscv32"
+    if re.search(r"\barm\b", show_arch_output) or "armv" in show_arch_output:
+        return "arm32"
+    return ""
+
+
 def _invoke_cli_command(name: str, arg: str) -> None:
     _ensure_repo_on_sys_path()
     from gdbtrace.cli import build_parser
@@ -51,11 +69,16 @@ def _invoke_cli_command(name: str, arg: str) -> None:
 
     if name == "start":
         session = session_state(paths)
+        if not session.get("arch"):
+            current_arch = _current_arch_from_gdb()
+            if current_arch:
+                session["arch"] = current_arch
         if not session.get("elf"):
-            current_elf = gdb.current_progspace().filename
+            current_elf = _current_elf_from_gdb()
             if current_elf:
                 session["elf"] = current_elf
-                save_session_state(paths, session)
+        if session.get("arch") or session.get("elf"):
+            save_session_state(paths, session)
 
     try:
         parsed = parser.parse_args(argv)

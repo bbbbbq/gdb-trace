@@ -43,9 +43,10 @@ class GdbInitInstallTest(unittest.TestCase):
         input_text: str | None = None,
         env: dict[str, str] | None = None,
         cwd: Path | None = None,
+        gdb_bin: str = "gdb",
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["gdb", *args],
+            [gdb_bin, *args],
             cwd=cwd or REPO_ROOT,
             env=env,
             input=input_text,
@@ -184,6 +185,59 @@ class GdbInitInstallTest(unittest.TestCase):
 
             session_payload = json.loads((workdir / "session.json").read_text(encoding="utf-8"))
             self.assertEqual(session_payload["elf"], "/usr/bin/true")
+
+    def test_gdbtrace_start_can_infer_arch_from_current_gdb_architecture(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_home, tempfile.TemporaryDirectory() as temp_workdir:
+            workdir = Path(temp_workdir)
+            gdbinit_path = Path(temp_home) / ".gdbinit"
+            gdbinit_path.write_text(
+                "\n".join(
+                    [
+                        "python",
+                        "import runpy",
+                        f"runpy.run_path({str(INIT_SCRIPT)!r}, run_name='__main__')",
+                        "end",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            env.pop("PYTHONPATH", None)
+            env["GDBTRACE_GLOBAL_CONFIG"] = str(workdir / "global.json")
+            env["GDBTRACE_SESSION_FILE"] = str(workdir / "session.json")
+            env["GDBTRACE_RUNTIME_FILE"] = str(workdir / "runtime.json")
+            env["GDBTRACE_CAPTURE_BACKEND"] = "static"
+
+            result = self.run_gdb(
+                "-q",
+                input_text=(
+                    "set pagination off\n"
+                    "set architecture aarch64\n"
+                    "file /bin/true\n"
+                    "gdbtrace set-target 127.0.0.1:1234\n"
+                    "gdbtrace set-output infer_arch.log\n"
+                    "gdbtrace set-mode both\n"
+                    "gdbtrace start\n"
+                    "gdbtrace save\n"
+                    "gdbtrace stop\n"
+                    "quit\n"
+                ),
+                env=env,
+                cwd=workdir,
+                gdb_bin="gdb-multiarch",
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            self.assertIn('The target architecture is set to "aarch64".', result.stdout)
+            self.assertIn("trace started", result.stdout)
+            self.assertTrue((workdir / "infer_arch.log").exists())
+            self.assertIn("arch=aarch64", (workdir / "infer_arch.log").read_text(encoding="utf-8"))
+
+            session_payload = json.loads((workdir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual(session_payload["arch"], "aarch64")
 
 
 if __name__ == "__main__":
