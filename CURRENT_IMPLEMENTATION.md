@@ -3,6 +3,7 @@
 ## 当前状态
 
 - 当前仓库已进入最小代码实现阶段。
+- 第二十六批代码已完成：已补强 QEMU 真实后端复杂样例与 userspace 场景的正确性对拍测试。
 - 第二十五批代码已完成：已删除 target 配置命令，`gdbtrace start` 现按当前 GDB 会话状态判定是否允许启动。
 - 第二十批代码已完成：真实后端测试已统一切换为 QEMU 路径，AArch64 现通过 `qemu-aarch64` gdb stub 验证。
 - 第二十四批代码已完成：远程目标已彻底收敛为配置项，`start` 不再接受 `--target`。
@@ -90,6 +91,8 @@
 - 已移除全部 target 配置命令与 `show-target` 视图；当前远程目标不再由 `gdbtrace` 维护。
 - 已让 GDB 内 `start` 默认走 `gdb-current-session` 后端，并要求当前 inferior 已停在可读取指令的位置。
 - 已将 CLI 真实后端的远程地址收敛为仅供测试/低层调用使用的 `GDBTRACE_GDB_TARGET` 环境变量，不再暴露为主命令接口。
+- 已为 QEMU 复杂样例补充更强的正确性断言，覆盖调用顺序、分支路径选择、双重 dispatch 路径和递归进入深度等关键语义信号。
+- 已为 userspace `qemu-user` 场景补充更强的内部调用链断言，覆盖 `process_payload -> accumulate_scores -> normalize_token/parse_weight/compose_record` 和 `emit_summary -> printf` 等稳定路径。
 
 ## 当前验证状态
 
@@ -168,6 +171,9 @@
 - 已在宿主机执行 `python3 -m compileall gdbtrace tests`，确认本轮修改后的核心模块与测试文件均可正常编译。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_qemu_aarch64_backend.QemuAarch64BackendTest.test_qemu_backend_captures_basic_aarch64_sample -v`，确认删除 `set-target` 后，现有 QEMU AArch64 真实后端仍可通过 `GDBTRACE_GDB_TARGET` 低层测试通道正常工作。
 - 已在宿主机执行真实交互式 GDB 会话，确认 `gdbtrace show-config` 不再显示 `target`，且在未建立可追踪 inferior 时 `gdbtrace start` 会直接报 `current inferior is not stopped at a debuggable location`。
+- 已在宿主机执行新增复杂 QEMU 正确性测试：`tests.test_gdb_qemu_aarch64_backend.QemuAarch64BackendTest.test_qemu_backend_preserves_complex_call_order_for_aarch64`、`tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_preserves_complex_call_order_for_all_arm_variants`、`tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_preserves_dual_dispatch_flow_for_riscv`、`tests.test_qemu_user_userspace_apps.QemuUserUserspaceAppTest.test_qemu_user_program_preserves_internal_processing_flow`、`tests.test_qemu_user_userspace_apps.QemuUserUserspaceAppTest.test_qemu_user_printf_program_preserves_render_loop_structure`，当前全部通过。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_qemu_aarch64_backend.QemuAarch64BackendTest.test_qemu_backend_captures_complex_aarch64_sample tests.test_gdb_qemu_aarch64_backend.QemuAarch64BackendTest.test_qemu_backend_preserves_complex_call_order_for_aarch64 tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_captures_complex_samples_for_all_arm_variants tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_preserves_complex_call_order_for_all_arm_variants tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_captures_complex_samples_for_riscv tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_preserves_dual_dispatch_flow_for_riscv -v`，当前 6 项复杂样例真实回归全部通过。
+- 已在宿主机执行 `python3 -m unittest tests.test_qemu_user_userspace_apps.QemuUserUserspaceAppTest.test_qemu_user_program_preserves_internal_processing_flow tests.test_qemu_user_userspace_apps.QemuUserUserspaceAppTest.test_qemu_user_printf_program_preserves_render_loop_structure -v`，新增 2 项 userspace 正确性回归全部通过。
 
 ## 下一步
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,30 @@ AARCH64_PORT = "127.0.0.1:23064"
 
 
 class QemuAarch64BackendTest(unittest.TestCase):
+    @staticmethod
+    def _normalized_lines(content: str) -> list[str]:
+        return [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in content.splitlines()]
+
+    def assert_call_subsequence(self, content: str, expected: list[str]) -> None:
+        call_lines = [line.strip() for line in self._normalized_lines(content) if "call " in line]
+        cursor = 0
+        for expected_line in expected:
+            while cursor < len(call_lines) and call_lines[cursor] != expected_line:
+                cursor += 1
+            self.assertLess(cursor, len(call_lines), msg=f"missing call subsequence item: {expected_line}\n{call_lines}")
+            cursor += 1
+
+    def count_calls(self, content: str, function: str) -> int:
+        return sum(1 for line in self._normalized_lines(content) if line.strip() == f"call {function}")
+
+    def max_call_depth(self, content: str, function: str) -> int:
+        matching_depths = []
+        for line in self._normalized_lines(content):
+            stripped = line.lstrip(" ")
+            if stripped == f"call {function}":
+                matching_depths.append((len(line) - len(stripped)) // 4)
+        return max(matching_depths, default=0)
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.state_dir = Path(self.temp_dir.name)
@@ -154,6 +179,35 @@ class QemuAarch64BackendTest(unittest.TestCase):
         self.assertGreaterEqual(len(instruction_lines), 25)
 
         self.run_cli("stop")
+
+    def test_qemu_backend_preserves_complex_call_order_for_aarch64(self) -> None:
+        elf_path = self.compile_program("aarch64_complex.c")
+        output_path = self.state_dir / "aarch64_complex_order.log"
+        self.configure(elf_path, output_path, "both")
+
+        start = self.run_cli("start")
+        self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
+        save = self.run_cli("save")
+        self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
+
+        try:
+            content = output_path.read_text(encoding="utf-8")
+            self.assert_call_subsequence(
+                content,
+                [
+                    "call main",
+                    "call parse_and_route",
+                    "call dispatch",
+                    "call worker_primary",
+                    "call helper_mix",
+                    "call helper_recursive",
+                ],
+            )
+            self.assertNotIn("call worker_fallback", self._normalized_lines(content))
+            self.assertGreaterEqual(self.count_calls(content, "helper_recursive"), 1)
+            self.assertGreaterEqual(self.max_call_depth(content, "helper_recursive"), 4)
+        finally:
+            self.run_cli("stop")
 
     def test_qemu_backend_rejects_non_aarch64_arch(self) -> None:
         elf_path = self.compile_program("aarch64_sample.c")

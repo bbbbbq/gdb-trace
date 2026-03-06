@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,22 @@ PORTS = {
 
 
 class QemuRiscvBackendTest(unittest.TestCase):
+    @staticmethod
+    def _normalized_lines(content: str) -> list[str]:
+        return [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in content.splitlines()]
+
+    def assert_call_subsequence(self, content: str, expected: list[str]) -> None:
+        call_lines = [line.strip() for line in self._normalized_lines(content) if "call " in line]
+        cursor = 0
+        for expected_line in expected:
+            while cursor < len(call_lines) and call_lines[cursor] != expected_line:
+                cursor += 1
+            self.assertLess(cursor, len(call_lines), msg=f"missing call subsequence item: {expected_line}\n{call_lines}")
+            cursor += 1
+
+    def count_calls(self, content: str, function: str) -> int:
+        return sum(1 for line in self._normalized_lines(content) if line.strip() == f"call {function}")
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.state_dir = Path(self.temp_dir.name)
@@ -126,6 +143,43 @@ class QemuRiscvBackendTest(unittest.TestCase):
                 ]
                 self.assertGreaterEqual(len(instruction_lines), 25)
                 self.run_cli("stop")
+
+    def test_qemu_backend_preserves_dual_dispatch_flow_for_riscv(self) -> None:
+        expectations = {
+            "riscv32": "riscv32_complex.c",
+            "riscv64": "riscv64_complex.c",
+        }
+        for arch, source_name in expectations.items():
+            with self.subTest(arch=arch):
+                elf_path = self.compile_program(source_name, arch)
+                output_path = self.state_dir / f"{arch}_complex_flow.log"
+                self.configure(arch, elf_path, output_path, "both")
+
+                start = self.run_cli("start")
+                self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
+                save = self.run_cli("save")
+                self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
+
+                try:
+                    content = output_path.read_text(encoding="utf-8")
+                    self.assert_call_subsequence(
+                        content,
+                        [
+                            "call main",
+                            "call parse_and_route",
+                            "call dispatch",
+                            "call worker_primary",
+                            "call helper_mix",
+                            "call helper_recursive",
+                            "call dispatch",
+                            "call worker_fallback",
+                        ],
+                    )
+                    self.assertGreaterEqual(self.count_calls(content, "dispatch"), 2)
+                    self.assertGreaterEqual(self.count_calls(content, "helper_mix"), 2)
+                    self.assertGreaterEqual(self.count_calls(content, "helper_recursive"), 2)
+                finally:
+                    self.run_cli("stop")
 
     def test_qemu_backend_rejects_arm_arch(self) -> None:
         elf_path = self.state_dir / "dummy"

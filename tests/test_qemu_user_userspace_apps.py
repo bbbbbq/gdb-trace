@@ -25,6 +25,22 @@ RISCV64_PORT = "127.0.0.1:26164"
 
 
 class QemuUserUserspaceAppTest(unittest.TestCase):
+    @staticmethod
+    def _normalized_lines(content: str) -> list[str]:
+        return [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in content.splitlines()]
+
+    def count_calls(self, content: str, function: str) -> int:
+        return sum(1 for line in self._normalized_lines(content) if line.strip() == f"call {function}")
+
+    def assert_call_subsequence(self, content: str, expected: list[str]) -> None:
+        call_lines = [line.strip() for line in self._normalized_lines(content) if "call " in line]
+        cursor = 0
+        for expected_line in expected:
+            while cursor < len(call_lines) and call_lines[cursor] != expected_line:
+                cursor += 1
+            self.assertLess(cursor, len(call_lines), msg=f"missing call subsequence item: {expected_line}\n{call_lines}")
+            cursor += 1
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.state_dir = Path(self.temp_dir.name)
@@ -179,6 +195,46 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
         finally:
             self.run_cli("stop", env_override=env_override)
 
+    def test_qemu_user_program_preserves_internal_processing_flow(self) -> None:
+        env_override = {
+            "GDBTRACE_CAPTURE_BACKEND": "gdb-qemu-riscv",
+            "GDBTRACE_GDB_MAX_STEPS": "20000",
+            "GDBTRACE_GDB_QEMU_RISCV_SYSROOT": "/usr/riscv64-linux-gnu",
+            "LD_BIND_NOW": "1",
+        }
+        elf_path, _ = self.compile_riscv64_userspace()
+        output_path = self.state_dir / "riscv64_userspace_flow.log"
+        self.configure(RISCV64_PORT, "riscv64", elf_path, output_path, env_override)
+
+        try:
+            start = self.run_cli("start", env_override=env_override)
+            self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
+            save = self.run_cli("save", env_override=env_override)
+            self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
+
+            content = output_path.read_text(encoding="utf-8")
+            self.assert_call_subsequence(
+                content,
+                [
+                    "call process_payload",
+                    "call accumulate_scores",
+                    "call normalize_token",
+                    "call strlen",
+                    "call memcpy",
+                    "call parse_weight",
+                    "call strtol",
+                    "call compose_record",
+                    "call snprintf",
+                ],
+            )
+            self.assertEqual(self.count_calls(content, "process_payload"), 1)
+            self.assertEqual(self.count_calls(content, "accumulate_scores"), 1)
+            self.assertGreaterEqual(self.count_calls(content, "normalize_token"), 1)
+            self.assertGreaterEqual(self.count_calls(content, "compose_record"), 1)
+            self.assertGreaterEqual(self.count_calls(content, "parse_weight"), 1)
+        finally:
+            self.run_cli("stop", env_override=env_override)
+
     def test_qemu_user_arm_printf_program(self) -> None:
         env_override = {
             "GDBTRACE_CAPTURE_BACKEND": "gdb-qemu-arm",
@@ -219,6 +275,37 @@ class QemuUserUserspaceAppTest(unittest.TestCase):
 
             content = output_path.read_text(encoding="utf-8")
             self.assert_printf_trace(content, "gdb-qemu-riscv")
+        finally:
+            self.run_cli("stop", env_override=env_override)
+
+    def test_qemu_user_printf_program_preserves_render_loop_structure(self) -> None:
+        env_override = {
+            "GDBTRACE_CAPTURE_BACKEND": "gdb-qemu-riscv",
+            "GDBTRACE_GDB_MAX_STEPS": "20000",
+            "GDBTRACE_GDB_QEMU_RISCV_SYSROOT": "/usr/riscv64-linux-gnu",
+            "LD_BIND_NOW": "1",
+        }
+        elf_path, _ = self.compile_riscv64_userspace("userspace_printf_app.c")
+        output_path = self.state_dir / "riscv64_printf_flow.log"
+        self.configure(RISCV64_PORT, "riscv64", elf_path, output_path, env_override)
+
+        try:
+            start = self.run_cli("start", env_override=env_override)
+            self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
+            save = self.run_cli("save", env_override=env_override)
+            self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
+
+            content = output_path.read_text(encoding="utf-8")
+            self.assert_call_subsequence(
+                content,
+                [
+                    "call emit_summary",
+                    "call printf",
+                ],
+            )
+            self.assertEqual(self.count_calls(content, "emit_summary"), 1)
+            self.assertGreaterEqual(self.count_calls(content, "printf"), 1)
+            self.assertNotIn("call printf@plt", content)
         finally:
             self.run_cli("stop", env_override=env_override)
 
