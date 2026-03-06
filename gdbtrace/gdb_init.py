@@ -9,24 +9,25 @@ import gdb
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INSTALL_SENTINEL = "_gdbtrace_gdb_init_installed"
+GDBTRACE_PREFIX = "gdbtrace"
 CLI_COMMAND_DOCS = {
-    "set-target": "Set the current session target. Usage: set-target <ip:port>",
-    "set-default-target": "Set the default target. Usage: set-default-target <ip:port>",
+    "set-target": "Set the current session target. Usage: gdbtrace set-target <ip:port>",
+    "set-default-target": "Set the default target. Usage: gdbtrace set-default-target <ip:port>",
     "show-target": "Show current, default, and effective target addresses.",
     "clear-target": "Clear the current session target.",
     "clear-default-target": "Clear the default target address.",
-    "set-arch": "Set the trace architecture. Usage: set-arch <thumb|thumb2|arm32|aarch64|riscv32|riscv64>",
-    "set-elf": "Set the current session ELF path. Usage: set-elf <file>",
-    "set-output": "Set the current session log path. Usage: set-output <path.log>",
-    "set-mode": "Set the trace mode. Usage: set-mode <inst|call|both>",
-    "set-registers": "Set register logging. Usage: set-registers <on|off>",
+    "set-arch": "Set the trace architecture. Usage: gdbtrace set-arch <thumb|thumb2|arm32|aarch64|riscv32|riscv64>",
+    "set-elf": "Set the current session ELF path. Usage: gdbtrace set-elf <file>",
+    "set-output": "Set the current session log path. Usage: gdbtrace set-output <path.log>",
+    "set-mode": "Set the trace mode. Usage: gdbtrace set-mode <inst|call|both>",
+    "set-registers": "Set register logging. Usage: gdbtrace set-registers <on|off>",
     "show-config": "Show the current trace configuration.",
     "clear-arch": "Clear the current session architecture.",
     "clear-elf": "Clear the current session ELF path.",
     "clear-output": "Clear the current session output path.",
     "clear-mode": "Clear the current session trace mode.",
     "clear-registers": "Clear the current session register logging mode.",
-    "start": "Start or resume trace capture. Usage: start [--target <ip:port>] [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]",
+    "start": "Start or resume trace capture. Usage: gdbtrace start [--target <ip:port>] [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]",
     "pause": "Pause the current trace.",
     "save": "Write the current trace snapshot to the configured output path.",
     "stop": "Stop the current trace and save the final result.",
@@ -60,11 +61,18 @@ def _invoke_cli_command(name: str, arg: str) -> None:
         raise gdb.GdbError(f"gdbtrace command failed: {name}")
 
 
+class GdbTracePrefixCommand(gdb.Command):
+    """gdbtrace command namespace."""
+
+    def __init__(self) -> None:
+        super().__init__(GDBTRACE_PREFIX, gdb.COMMAND_USER, prefix=True)
+
+
 class GdbTraceRunCommand(gdb.Command):
     """Run gdbtrace capture agent using GDBTRACE_GDB_* environment variables."""
 
     def __init__(self) -> None:
-        super().__init__("gdbtrace-run", gdb.COMMAND_USER)
+        super().__init__(f"{GDBTRACE_PREFIX} run", gdb.COMMAND_USER)
 
     def invoke(self, arg: str, from_tty: bool) -> None:
         del arg, from_tty
@@ -78,7 +86,7 @@ class _GdbTraceCliCommand(gdb.Command):
     command_name = ""
 
     def __init__(self) -> None:
-        super().__init__(self.command_name, gdb.COMMAND_USER)
+        super().__init__(f"{GDBTRACE_PREFIX} {self.command_name}", gdb.COMMAND_USER)
 
     def invoke(self, arg: str, from_tty: bool) -> None:
         del from_tty
@@ -103,6 +111,7 @@ def install() -> None:
     _ensure_repo_on_sys_path()
     if getattr(builtins, INSTALL_SENTINEL, False):
         return
+    GdbTracePrefixCommand()
     _register_cli_commands()
     GdbTraceRunCommand()
     setattr(builtins, INSTALL_SENTINEL, True)

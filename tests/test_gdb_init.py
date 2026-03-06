@@ -10,27 +10,28 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INIT_SCRIPT = REPO_ROOT / "gdbtrace" / "gdb_init.py"
 EXPECTED_USER_COMMANDS = (
-    "set-target",
-    "set-default-target",
-    "show-target",
-    "clear-target",
-    "clear-default-target",
-    "set-arch",
-    "set-elf",
-    "set-output",
-    "set-mode",
-    "set-registers",
-    "show-config",
-    "clear-arch",
-    "clear-elf",
-    "clear-output",
-    "clear-mode",
-    "clear-registers",
-    "start",
-    "pause",
-    "save",
-    "stop",
-    "gdbtrace-run",
+    "gdbtrace -- gdbtrace command namespace.",
+    "gdbtrace clear-arch",
+    "gdbtrace clear-default-target",
+    "gdbtrace clear-elf",
+    "gdbtrace clear-mode",
+    "gdbtrace clear-output",
+    "gdbtrace clear-registers",
+    "gdbtrace clear-target",
+    "gdbtrace pause",
+    "gdbtrace run",
+    "gdbtrace save",
+    "gdbtrace set-arch",
+    "gdbtrace set-default-target",
+    "gdbtrace set-elf",
+    "gdbtrace set-mode",
+    "gdbtrace set-output",
+    "gdbtrace set-registers",
+    "gdbtrace set-target",
+    "gdbtrace show-config",
+    "gdbtrace show-target",
+    "gdbtrace start",
+    "gdbtrace stop",
 )
 
 
@@ -98,17 +99,17 @@ class GdbInitInstallTest(unittest.TestCase):
                 "-q",
                 input_text=(
                     "set pagination off\n"
-                    "help set-target\n"
-                    "set-target 127.0.0.1:1234\n"
-                    "set-arch aarch64\n"
-                    "set-elf demo.elf\n"
-                    "set-output trace.log\n"
-                    "set-mode both\n"
-                    "show-config\n"
-                    "show-target\n"
-                    "start\n"
-                    "save\n"
-                    "stop\n"
+                    "help gdbtrace set-target\n"
+                    "gdbtrace set-target 127.0.0.1:1234\n"
+                    "gdbtrace set-arch aarch64\n"
+                    "gdbtrace set-elf demo.elf\n"
+                    "gdbtrace set-output trace.log\n"
+                    "gdbtrace set-mode both\n"
+                    "gdbtrace show-config\n"
+                    "gdbtrace show-target\n"
+                    "gdbtrace start\n"
+                    "gdbtrace save\n"
+                    "gdbtrace stop\n"
                     "quit\n"
                 ),
                 env=env,
@@ -116,7 +117,7 @@ class GdbInitInstallTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
-            self.assertIn("Set the current session target. Usage: set-target <ip:port>", result.stdout)
+            self.assertIn("Set the current session target. Usage: gdbtrace set-target <ip:port>", result.stdout)
             self.assertIn("arch=aarch64", result.stdout)
             self.assertIn("elf=demo.elf", result.stdout)
             self.assertIn("output=trace.log", result.stdout)
