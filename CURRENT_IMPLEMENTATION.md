@@ -133,6 +133,9 @@
 - 已在宿主机执行 `python3 -m unittest tests.test_trace_filters -v`，确认过滤重建深度后仍保留寄存器载荷并正确输出 `regs:` 行。
 - 已在宿主机执行 `python3 -m unittest tests.test_log_formatting -v`，确认 `call` 模式在 `set-registers on` 下不会采样或渲染寄存器内容。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent tests.test_trace_filters tests.test_log_formatting tests.test_cli_lifecycle -v`，当前与本轮修复直接相关的 17 项自动化测试全部通过。
+- 已在宿主机原生环境确认 `gdb`、`gdb-multiarch`、`aarch64-linux-gnu-gcc`、`qemu-arm` 可用，可支持本轮的本地基础回归验证。
+- 已在宿主机尝试执行 `python3 -m unittest tests.test_gdb_native_backend.NativeGdbBackendTest.test_gdb_native_backend_can_emit_registers -v`；当前宿主机为 `x86_64`，`gdb-native` 路径需要直接运行 `aarch64` ELF，因此在断点插入阶段失败，不构成本轮修复回归结论。
+- 已确认宿主机缺少 `arm-linux-gnueabihf-gcc` 与 `riscv64-linux-gnu-gcc`，因此本轮无法在宿主机补做 ARM / RISC-V 真实后端的交叉编译回归。
 - 当前环境缺少 `docker` 可执行文件，本轮未能进入指定容器 `ubuntu` 执行安装与验证；该阻塞已记录。
 
 ## 下一步
