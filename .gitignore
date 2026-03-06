@@ -3,3 +3,7 @@
 __pycache__/
 *.pyc
 *.log
+AGENTS.md
+REVIEW_COMMENTS.md
+PERFORMANCE_STATS_PLAN.md
+TODO.md
