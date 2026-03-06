@@ -260,6 +260,7 @@ def _finalize_interrupted_runtime(paths: Paths, runtime: dict[str, object]) -> d
     runtime.pop("capture_spool", None)
     save_runtime_state(paths, runtime)
     clear_file(spool_path)
+    _write_log_snapshot(runtime, "snapshot")
     return runtime
 
 
@@ -341,7 +342,8 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
         clear_file(paths.runtime_file)
         raise
     if capture_result.interrupted:
-        print("trace interrupted and paused; use gdbtrace save or gdbtrace stop")
+        _write_log_snapshot(new_runtime, "snapshot")
+        print(f"trace interrupted, paused, and saved to {_snapshot_output_message(new_runtime)}")
     else:
         print("trace started")
     return 0

@@ -130,7 +130,7 @@ class CliLifecycleTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error: cannot change trace arguments while resuming a paused trace", result.stdout)
 
-    def test_save_recovers_interrupted_current_session_trace_from_spool(self) -> None:
+    def test_pause_recovers_interrupted_current_session_trace_and_autosaves_snapshot(self) -> None:
         self.configure_trace()
         spool_path = self.state_dir / "runtime.json.events.jsonl"
         runtime_payload = {
@@ -162,15 +162,16 @@ class CliLifecycleTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-        saved = self.run_cli("save")
-        self.assertEqual(saved.returncode, 0)
-        self.assertIn(f"trace saved to {self.output_path}, {self.call_output_path}", saved.stdout)
+        paused = self.run_cli("pause")
+        self.assertNotEqual(paused.returncode, 0)
+        self.assertIn("error: no running trace to pause", paused.stdout)
         normalized_runtime = json.loads((self.state_dir / "runtime.json").read_text(encoding="utf-8"))
         self.assertEqual(normalized_runtime["status"], "paused")
         self.assertNotIn("capture_in_progress", normalized_runtime)
         self.assertFalse(spool_path.exists())
         self.assertTrue(self.output_path.exists())
         self.assertIn("[trace snapshot]", self.output_path.read_text(encoding="utf-8"))
+        self.assertTrue(self.call_output_path.exists())
 
 
 if __name__ == "__main__":

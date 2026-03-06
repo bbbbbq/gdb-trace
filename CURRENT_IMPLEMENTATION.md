@@ -3,6 +3,7 @@
 ## 当前状态
 
 - 当前仓库已进入最小代码实现阶段。
+- 第二十八批代码已完成：已将 GDB 中 `Ctrl+C` 中断进一步收敛为自动 `pause + save` 的语义。
 - 第二十七批代码已完成：已将 GDB 中 `Ctrl+C` 中断收敛为可保留 partial trace 的 paused/save/stop 语义。
 - 第二十六批代码已完成：已补强 QEMU 真实后端复杂样例与 userspace 场景的正确性对拍测试。
 - 第二十五批代码已完成：已删除 target 配置命令，`gdbtrace start` 现按当前 GDB 会话状态判定是否允许启动。
@@ -94,8 +95,9 @@
 - 已将 CLI 真实后端的远程地址收敛为仅供测试/低层调用使用的 `GDBTRACE_GDB_TARGET` 环境变量，不再暴露为主命令接口。
 - 已为 QEMU 复杂样例补充更强的正确性断言，覆盖调用顺序、分支路径选择、双重 dispatch 路径和递归进入深度等关键语义信号。
 - 已为 userspace `qemu-user` 场景补充更强的内部调用链断言，覆盖 `process_payload -> accumulate_scores -> normalize_token/parse_weight/compose_record` 和 `emit_summary -> printf` 等稳定路径。
-- 已为 GDB 当前会话采集加入中断保护：`gdbtrace start` 过程中若被 `Ctrl+C` 打断，会保留已采集事件并允许后续 `save` / `stop`。
+- 已为 GDB 当前会话采集加入中断保护：`gdbtrace start` 过程中若被 `Ctrl+C` 打断，会保留已采集事件并自动写出 snapshot，再允许后续 `save` / `stop`。
 - 已为中断态 trace 增加 runtime spool 恢复逻辑，确保异常中止时可从临时事件流收敛回 `paused` 运行时状态。
+- 已将中断态 runtime 的恢复收敛点前移到自动 snapshot 落盘，确保 `Ctrl+C` 后即使不先手动 `save`，也已有一份可读日志。
 
 ## 当前验证状态
 
@@ -177,15 +179,15 @@
 - 已在宿主机执行新增复杂 QEMU 正确性测试：`tests.test_gdb_qemu_aarch64_backend.QemuAarch64BackendTest.test_qemu_backend_preserves_complex_call_order_for_aarch64`、`tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_preserves_complex_call_order_for_all_arm_variants`、`tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_preserves_dual_dispatch_flow_for_riscv`、`tests.test_qemu_user_userspace_apps.QemuUserUserspaceAppTest.test_qemu_user_program_preserves_internal_processing_flow`、`tests.test_qemu_user_userspace_apps.QemuUserUserspaceAppTest.test_qemu_user_printf_program_preserves_render_loop_structure`，当前全部通过。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_qemu_aarch64_backend.QemuAarch64BackendTest.test_qemu_backend_captures_complex_aarch64_sample tests.test_gdb_qemu_aarch64_backend.QemuAarch64BackendTest.test_qemu_backend_preserves_complex_call_order_for_aarch64 tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_captures_complex_samples_for_all_arm_variants tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_preserves_complex_call_order_for_all_arm_variants tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_captures_complex_samples_for_riscv tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_preserves_dual_dispatch_flow_for_riscv -v`，当前 6 项复杂样例真实回归全部通过。
 - 已在宿主机执行 `python3 -m unittest tests.test_qemu_user_userspace_apps.QemuUserUserspaceAppTest.test_qemu_user_program_preserves_internal_processing_flow tests.test_qemu_user_userspace_apps.QemuUserUserspaceAppTest.test_qemu_user_printf_program_preserves_render_loop_structure -v`，新增 2 项 userspace 正确性回归全部通过。
-- 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle tests.test_gdb_init -v`，当前与 `Ctrl+C` 中断保留语义直接相关的 14 项生命周期 / GDB 集成测试全部通过。
-- 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle.CliLifecycleTest.test_save_recovers_interrupted_current_session_trace_from_spool -v`，确认中断后可由 spool 正确恢复为 `paused` runtime。
-- 已在宿主机执行 `python3 -m unittest tests.test_gdb_init.GdbInitInstallTest.test_gdbtrace_start_interrupt_keeps_partial_trace_for_save_and_stop -v`，确认真实交互式 GDB 中 `gdbtrace start -> Ctrl+C -> gdbtrace save -> gdbtrace stop` 流程可用。
-- 已在宿主机执行 `python3 -m compileall gdbtrace tests`，确认本轮 `Ctrl+C` 收敛改动涉及的代码与测试均可正常编译。
+- 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle tests.test_gdb_init -v`，当前与 `Ctrl+C` 自动 `pause + save` 语义直接相关的 14 项生命周期 / GDB 集成测试全部通过。
+- 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle.CliLifecycleTest.test_pause_recovers_interrupted_current_session_trace_and_autosaves_snapshot -v`，确认中断后可由 spool 正确恢复为 `paused` runtime 并自动落盘 snapshot。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_init.GdbInitInstallTest.test_gdbtrace_start_interrupt_autosaves_snapshot_and_allows_stop -v`，确认真实交互式 GDB 中 `gdbtrace start -> Ctrl+C -> gdbtrace stop` 流程可用，且中断后无需先手动 `save`。
+- 已在宿主机执行 `python3 -m compileall gdbtrace tests`，确认本轮 `Ctrl+C` 自动保存收敛改动涉及的代码与测试均可正常编译。
 
 ## 下一步
 
 1. 补跑更大范围的 QEMU 真实后端回归，确认 `aarch64`、ARM32 系和 RISC-V 系在复杂样例下保持一致。
-2. 在具备 `docker` 能力后，补跑容器 `ubuntu` 内的 GDB 安装与 `Ctrl+C` 中断语义验证。
+2. 在具备 `docker` 能力后，补跑容器 `ubuntu` 内的 GDB 安装与 `Ctrl+C` 自动 `pause + save` 语义验证。
 3. 继续收敛真实 GDB 采集链路中的通用部分，减少各 QEMU 后端的重复实现。
 
 ## 已知阻塞或风险
