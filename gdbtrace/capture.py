@@ -282,6 +282,16 @@ class QemuArmRemoteCaptureBackend(QemuRemoteCaptureBackend):
     error_label = "qemu-arm"
 
 
+class QemuAarch64RemoteCaptureBackend(QemuRemoteCaptureBackend):
+    name = "gdb-qemu-aarch64"
+    supported_archs = ("aarch64",)
+    qemu_bin_by_arch = {
+        "aarch64": "qemu-aarch64",
+    }
+    default_sysroot = "/usr/aarch64-linux-gnu"
+    error_label = "qemu-aarch64"
+
+
 class QemuRiscvRemoteCaptureBackend(QemuRemoteCaptureBackend):
     name = "gdb-qemu-riscv"
     supported_archs = ("riscv32", "riscv64")
@@ -299,6 +309,8 @@ def resolve_capture_backend() -> CaptureBackend:
         return StaticSampleCaptureBackend()
     if backend_name == "gdb-native":
         return NativeGdbCaptureBackend()
+    if backend_name == "gdb-qemu-aarch64":
+        return QemuAarch64RemoteCaptureBackend()
     if backend_name == "gdb-qemu-arm":
         return QemuArmRemoteCaptureBackend()
     if backend_name == "gdb-qemu-riscv":

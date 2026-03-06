@@ -3,6 +3,8 @@
 ## 当前状态
 
 - 当前仓库已进入最小代码实现阶段。
+- 第二十批代码已完成：真实后端测试已统一切换为 QEMU 路径，AArch64 现通过 `qemu-aarch64` gdb stub 验证。
+- 第二十一批代码已完成：GDB 命令命名空间已改为 `gdbtrace <subcommand>`，避免与 GDB 和其他插件命令冲突。
 - 第十七批代码已完成：已收敛寄存器输出 review 问题，包括采样时序、过滤重建保留和 `call` 模式采样收敛。
 - 第十八批代码已完成：已补齐原生环境下的 GDB init 自动化与交互式安装验证。
 - 第十九批代码已完成：GDB 内命令集已与 CLI 命令集对齐。
@@ -50,6 +52,8 @@
 - 已为 `arm32`、`thumb`、`thumb2` 补充模式级日志测试覆盖。
 - 已将后端名称和过滤后事件数量纳入运行时状态与日志头元数据。
 - 已新增 `gdb-native` 真实采集后端，当前支持 `aarch64` 原生 GDB 单步采集。
+- 已新增 `gdb-qemu-aarch64` 真实采集后端，当前支持 `aarch64` 通过 `qemu-aarch64` gdb stub + `gdb-multiarch` 采集。
+- 已将原 AArch64 真实后端测试切换为 `tests/test_gdb_qemu_aarch64_backend.py`，当前真实测试口径已不再依赖 `gdb-native`。
 - 已新增 `test_programs/aarch64_sample.c` 与 `test_programs/aarch64_complex.c` 两个真实测试程序源码，用于基础与复杂场景验证。
 - 已新增 `gdb-qemu-arm` 真实采集后端，当前支持 `arm32`、`thumb`、`thumb2` 通过 `qemu-arm` gdb stub + `gdb-multiarch` 采集。
 - 已新增 `test_programs/arm32_sample.c`、`thumb_sample.c`、`thumb2_sample.c` 三个 ARM32 系基础样例源码。
@@ -62,7 +66,7 @@
 - 已新增 `tests/test_qemu_user_userspace_apps.py`，用于验证 ARM 与 `riscv64` 在 `qemu-user` 用户态程序场景下的真实 trace 行为。
 - 已新增 `test_programs/aarch64_start.S` 与 `test_programs/arm32_start.S`，用于构建无 `main` 符号的最小入口 ELF，验证 stripped ELF 场景。
 - 已实现真实 backend 的无 `main` 符号退化逻辑：允许 `inst` 模式做地址级指令流采集，拒绝 `call` / `both` 模式。
-- 已新增 stripped ELF 真实场景自动化测试，覆盖 `gdb-native` `aarch64` 与 `gdb-qemu-arm` `arm32` 两条链路。
+- 已新增 stripped ELF 真实场景自动化测试，覆盖 `gdb-qemu-aarch64` `aarch64` 与 `gdb-qemu-arm` `arm32` 两条链路。
 - 已实现 `both` 模式双日志输出：原 `set-output` 路径保存层级化 `both` 日志，并派生 `<stem>.call.log` 保存纯函数调用序列日志。
 - 已新增 `test_programs/userspace_printf_app.c`，作为显式调用 `printf` / `snprintf` 的用户态程序样例。
 - 已新增 `tests/test_qemu_user_userspace_apps.py` 中的 `printf` 用户态真实测试，覆盖 `arm32` 与 `riscv64` 的 `qemu-user` 调试链路。
@@ -77,6 +81,7 @@
 - 已补充 `tests/test_gdb_init.py`，覆盖 `gdb_init.py` 的重复加载、命令注册，以及用户级 `~/.gdbinit` 自动加载场景。
 - 已在 `gdbtrace/gdb_init.py` 中注册与 CLI 一致的 GDB 用户命令：`set-target`、`set-default-target`、`show-target`、`clear-target`、`clear-default-target`、`set-arch`、`set-elf`、`set-output`、`set-mode`、`set-registers`、`show-config`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode`、`clear-registers`、`start`、`pause`、`save`、`stop`。
 - 已让 GDB 用户命令复用现有 CLI handler、状态文件与校验逻辑，避免形成第二套命令实现。
+- 已将 GDB 用户命令统一收敛到 `gdbtrace <subcommand>` 命名空间下，包括 `gdbtrace set-target`、`gdbtrace start`、`gdbtrace stop` 和低层 `gdbtrace run`。
 
 ## 当前验证状态
 
@@ -104,7 +109,7 @@
 - 已在 Docker 容器 `ubuntu` 中完成日志头 `backend` / `events` 字段的手工验证。
 - 已将测试计划扩展为“基础样例 + 复杂 ELF 样例”两层结构，要求后续补齐更长指令流和更复杂调用图的真实程序验证。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 再次执行 `python3 -m unittest discover -s tests -v`，当前 19 项自动化测试全部通过。
-- 已在 Docker 容器 `ubuntu` 中完成 `aarch64` 原生 GDB 真实场景自动化测试，覆盖基础样例、复杂样例、非 `aarch64` 拒绝路径。
+- 已在原生 Ubuntu 环境中完成 `aarch64` 的 `qemu-aarch64` gdb stub 真实场景自动化测试，覆盖基础样例、复杂样例、非 `aarch64` 拒绝路径。
 - 已在 Docker 容器 `ubuntu` 中以手工 CLI 流程完成 `aarch64_complex` 的 `set-* -> start -> save -> stop` 验证，并确认产出带颜色的层级化 `.log`。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 22 项自动化测试全部通过。
 - 已在 Docker 容器 `ubuntu` 中完成 `arm32`、`thumb`、`thumb2` 的 `qemu-arm` gdb stub 真实场景自动化测试，覆盖基础样例、复杂样例、非 ARM32 系拒绝路径。
@@ -116,7 +121,7 @@
 - 已在 Docker 容器 `ubuntu` 中完成带 `libc` 调用的 ARM 与 `riscv64` 用户态程序 `qemu-user` 自动化测试。
 - 已在 Docker 容器 `ubuntu` 中以手工 CLI 流程完成动态链接 `arm32` 用户态程序的 `set-* -> start -> save -> stop` 验证，并确认 trace 中出现业务函数与 `strlen@plt` 等用户态调用边界。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 30 项自动化测试全部通过。
-- 已在 Docker 容器 `ubuntu` 中完成 stripped ELF 自动化测试，确认 `gdb-native` `aarch64` 与 `gdb-qemu-arm` `arm32` 在无 `main` 符号时可输出地址级 `inst` trace，并在 `call` / `both` 模式下明确报错。
+- 已在原生 Ubuntu 环境中完成 stripped ELF 自动化测试，确认 `gdb-qemu-aarch64` `aarch64` 与 `gdb-qemu-arm` `arm32` 在无 `main` 符号时可输出地址级 `inst` trace，并在 `call` / `both` 模式下明确报错。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 34 项自动化测试全部通过。
 - 已在 Docker 容器 `ubuntu` 中完成 `both` 双日志输出验证，确认主日志保留层级化 `both` 内容，派生 `<stem>.call.log` 仅保留调用序列。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 再次执行 `python3 -m unittest discover -s tests -v`，当前 34 项自动化测试全部通过。
@@ -126,7 +131,7 @@
 - 已在 Docker 容器 `ubuntu` 中完成动态库调用展开验证，确认 `arm32` `printf` 用户态 trace 不再将 `printf@plt` 作为单独边界，并能继续展示 libc 内部地址级子调用。
 - 已完成使用指南文档一致性检查，确保其与现有 CLI、日志模式、真实后端和当前需求文档一致。
 - 已补充寄存器输出开关与日志格式说明。
-- 已在 Docker 容器 `ubuntu` 中完成寄存器输出相关自动化测试，覆盖静态样例、`gdb-native` `aarch64` 和 `gdb-qemu-arm` `arm32` 三条链路。
+- 已在原生 Ubuntu 环境中完成寄存器输出相关自动化测试，覆盖静态样例、`gdb-qemu-aarch64` `aarch64` 和 `gdb-qemu-arm` `arm32` 三条链路。
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 41 项自动化测试全部通过。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_init -v`，确认 GDB 初始化脚本可重复加载，且成功注册 `gdbtrace-run`。
 - 已在宿主机执行 `gdb -q -batch -ex "help user-defined"`，确认普通启动 GDB 后已自动出现 `gdbtrace-run`。
@@ -134,6 +139,8 @@
 - 已在宿主机执行真实交互式 GDB 会话，并在提示符下完成 `help gdbtrace-run -> quit` 验证，确认当前原生环境安装可直接识别该命令。
 - 已在宿主机执行更新后的 `python3 -m unittest tests.test_gdb_init -v`，确认 `help user-defined` 可列出全部 `gdbtrace` GDB 命令，且交互式 GDB 中可直接完成 `set-target -> set-arch -> set-elf -> set-output -> set-mode -> start -> save -> stop` 最小流程。
 - 已在宿主机执行真实交互式 GDB 会话，并直接使用 `set-target`、`set-arch`、`set-elf`、`set-output`、`set-mode`、`show-config`、`show-target`、`start`、`save`、`stop` 验证命令集可用；同时确认 `/tmp/trace.log` 与 `/tmp/trace.call.log` 成功落盘。
+- 已在宿主机执行更新后的 `python3 -m unittest tests.test_gdb_init -v`，确认 `help user-defined` 与 `help gdbtrace` 中均显示 `gdbtrace <subcommand>` 形式的命令集，且交互式 GDB 中可直接完成 `gdbtrace set-target -> gdbtrace set-arch -> gdbtrace set-elf -> gdbtrace set-output -> gdbtrace set-mode -> gdbtrace start -> gdbtrace save -> gdbtrace stop` 最小流程。
+- 已在宿主机执行真实交互式 GDB 会话，并直接使用 `gdbtrace set-target`、`gdbtrace set-arch`、`gdbtrace set-elf`、`gdbtrace set-output`、`gdbtrace set-mode`、`gdbtrace show-config`、`gdbtrace show-target`、`gdbtrace start`、`gdbtrace save`、`gdbtrace stop` 验证命名空间已生效；同时确认 `/tmp/trace_ns.log` 与 `/tmp/trace_ns.call.log` 成功落盘。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent -v`，确认寄存器采样发生在 `stepi` 之后，并覆盖 `_step_until_exit()` 路径。
 - 已在宿主机执行 `python3 -m unittest tests.test_trace_filters -v`，确认过滤重建深度后仍保留寄存器载荷并正确输出 `regs:` 行。
 - 已在宿主机执行 `python3 -m unittest tests.test_log_formatting -v`，确认 `call` 模式在 `set-registers on` 下不会采样或渲染寄存器内容。
@@ -142,14 +149,15 @@
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_can_emit_registers_for_arm32 -v`，确认 ARM `qemu` gdb stub 真实链路下寄存器输出仍然正常。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_captures_basic_samples_for_riscv -v`，确认 RISC-V `qemu` gdb stub 真实链路仍可正常完成基础采集。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent tests.test_trace_filters tests.test_log_formatting tests.test_cli_lifecycle tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_can_emit_registers_for_arm32 tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_captures_basic_samples_for_riscv -v`，当前与本轮修复直接相关的 19 项测试全部通过。
-- 已在宿主机尝试执行 `python3 -m unittest tests.test_gdb_native_backend.NativeGdbBackendTest.test_gdb_native_backend_can_emit_registers -v`；当前宿主机为 `x86_64`，`gdb-native` 路径需要直接运行 `aarch64` ELF，因此在断点插入阶段失败，不构成本轮修复回归结论。
+- 已在原生 Ubuntu 环境执行 `python3 -m unittest tests.test_gdb_qemu_aarch64_backend -v`，当前 6 项 `aarch64` QEMU 真实后端测试全部通过。
+- 已在原生 Ubuntu 环境执行 `python3 -m unittest tests.test_gdb_qemu_aarch64_backend tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_can_emit_registers_for_arm32 tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_captures_basic_samples_for_riscv -v`，当前 8 项代表性真实后端回归全部通过，并确认 AArch64、ARM32、RISC-V 真实测试链路均已走 QEMU。
 - 当前环境缺少 `docker` 可执行文件，本轮未能进入指定容器 `ubuntu` 执行安装与验证；该阻塞已记录。
 
 ## 下一步
 
-1. 在 `docker` 能力恢复后，于指定容器 `ubuntu` 中补做本轮寄存器修复和 GDB 命令集对齐的容器回归验证。
+1. 补跑更大范围的 QEMU 真实后端回归，确认 `aarch64`、ARM32 系和 RISC-V 系在复杂样例下保持一致。
 2. 继续恢复并推进 GDB 安装入口相关容器验证。
-3. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
+3. 继续收敛真实 GDB 采集链路中的通用部分，减少各 QEMU 后端的重复实现。
 
 ## 已知阻塞或风险
 

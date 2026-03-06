@@ -45,24 +45,30 @@ end
 建议把这段加入用户级 `~/.gdbinit`。加载完成后，可在 GDB 中执行：
 
 ```gdb
-help user-defined
+help gdbtrace
 ```
 
 安装完成后，GDB 内可直接使用与 CLI 一致的命令名，例如：
 
 ```gdb
-set-target 127.0.0.1:1234
-set-arch aarch64
-set-elf demo.elf
-set-output trace.log
-set-mode both
-show-config
-start
-save
-stop
+gdbtrace set-target 127.0.0.1:1234
+gdbtrace set-arch aarch64
+gdbtrace set-elf demo.elf
+gdbtrace set-output trace.log
+gdbtrace set-mode both
+gdbtrace show-config
+gdbtrace start
+gdbtrace save
+gdbtrace stop
 ```
 
-同时仍保留低层 `gdbtrace-run` 命令，它会直接调用 `gdbtrace.gdb_agent.run()`，继续使用现有的 `GDBTRACE_GDB_*` 环境变量约定。
+如果需要直接调用低层 agent，也可使用：
+
+```gdb
+gdbtrace run
+```
+
+它会直接调用 `gdbtrace.gdb_agent.run()`，继续使用现有的 `GDBTRACE_GDB_*` 环境变量约定。
 
 ## CLI 模型
 
@@ -205,6 +211,7 @@ ret main
 
 - `static`
 - `gdb-native`
+- `gdb-qemu-aarch64`
 - `gdb-qemu-arm`
 - `gdb-qemu-riscv`
 
@@ -214,13 +221,7 @@ ret main
 export GDBTRACE_CAPTURE_BACKEND=static
 ```
 
-或：
-
-```bash
-export GDBTRACE_CAPTURE_BACKEND=gdb-native
-```
-
-## aarch64 原生示例
+## aarch64 QEMU gdb stub 示例
 
 在容器中编译一个 `aarch64` 样例：
 
@@ -232,13 +233,15 @@ aarch64-linux-gnu-gcc -g -O0 -fno-omit-frame-pointer -no-pie \
 执行 trace：
 
 ```bash
-export GDBTRACE_CAPTURE_BACKEND=gdb-native
+export GDBTRACE_CAPTURE_BACKEND=gdb-qemu-aarch64
+export GDBTRACE_GDB_MAX_STEPS=20000
 
-python3 -m gdbtrace set-target 127.0.0.1:1234
+python3 -m gdbtrace set-target 127.0.0.1:23064
 python3 -m gdbtrace set-arch aarch64
 python3 -m gdbtrace set-elf /tmp/aarch64_sample
 python3 -m gdbtrace set-output ./aarch64_sample.log
 python3 -m gdbtrace set-mode both
+python3 -m gdbtrace set-registers on
 
 python3 -m gdbtrace start
 python3 -m gdbtrace save

@@ -10,9 +10,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROGRAMS_DIR = REPO_ROOT / "test_programs"
+AARCH64_PORT = "127.0.0.1:23064"
 
 
-class NativeGdbBackendTest(unittest.TestCase):
+class QemuAarch64BackendTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.state_dir = Path(self.temp_dir.name)
@@ -21,8 +22,8 @@ class NativeGdbBackendTest(unittest.TestCase):
         self.env["GDBTRACE_SESSION_FILE"] = str(self.state_dir / "session.json")
         self.env["GDBTRACE_GLOBAL_CONFIG"] = str(self.state_dir / "global.json")
         self.env["GDBTRACE_RUNTIME_FILE"] = str(self.state_dir / "runtime.json")
-        self.env["GDBTRACE_CAPTURE_BACKEND"] = "gdb-native"
-        self.env["GDBTRACE_GDB_MAX_STEPS"] = "4096"
+        self.env["GDBTRACE_CAPTURE_BACKEND"] = "gdb-qemu-aarch64"
+        self.env["GDBTRACE_GDB_MAX_STEPS"] = "8192"
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
@@ -58,7 +59,7 @@ class NativeGdbBackendTest(unittest.TestCase):
         return output_path
 
     def configure(self, elf_path: Path, output_path: Path, mode: str, registers: str = "off") -> None:
-        self.assertEqual(self.run_cli("set-target", "127.0.0.1:1234").returncode, 0)
+        self.assertEqual(self.run_cli("set-target", AARCH64_PORT).returncode, 0)
         self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", str(elf_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(output_path)).returncode, 0)
@@ -108,18 +109,18 @@ class NativeGdbBackendTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         return self.strip_program(output_path)
 
-    def test_gdb_native_backend_captures_basic_aarch64_sample(self) -> None:
+    def test_qemu_backend_captures_basic_aarch64_sample(self) -> None:
         elf_path = self.compile_program("aarch64_sample.c")
         output_path = self.state_dir / "aarch64_sample.log"
         self.configure(elf_path, output_path, "both")
 
         start = self.run_cli("start")
-        self.assertEqual(start.returncode, 0, msg=start.stdout)
+        self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
         save = self.run_cli("save")
-        self.assertEqual(save.returncode, 0, msg=save.stdout)
+        self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
 
         content = output_path.read_text(encoding="utf-8")
-        self.assertIn("backend=gdb-native", content)
+        self.assertIn("backend=gdb-qemu-aarch64", content)
         self.assertIn("\x1b[32mcall main\x1b[0m", content)
         self.assertIn("call func_a", content)
         self.assertIn("call func_b", content)
@@ -128,18 +129,18 @@ class NativeGdbBackendTest(unittest.TestCase):
         self.assertIn(" ret", content)
 
         runtime_payload = Path(self.env["GDBTRACE_RUNTIME_FILE"]).read_text(encoding="utf-8")
-        self.assertIn('"capture_backend": "gdb-native"', runtime_payload)
+        self.assertIn('"capture_backend": "gdb-qemu-aarch64"', runtime_payload)
         self.run_cli("stop")
 
-    def test_gdb_native_backend_captures_complex_aarch64_sample(self) -> None:
+    def test_qemu_backend_captures_complex_aarch64_sample(self) -> None:
         elf_path = self.compile_program("aarch64_complex.c")
         output_path = self.state_dir / "aarch64_complex.log"
         self.configure(elf_path, output_path, "both")
 
         start = self.run_cli("start")
-        self.assertEqual(start.returncode, 0, msg=start.stdout)
+        self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
         save = self.run_cli("save")
-        self.assertEqual(save.returncode, 0, msg=save.stdout)
+        self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
 
         content = output_path.read_text(encoding="utf-8")
         self.assertIn("call parse_and_route", content)
@@ -154,10 +155,10 @@ class NativeGdbBackendTest(unittest.TestCase):
 
         self.run_cli("stop")
 
-    def test_gdb_native_backend_rejects_non_aarch64_arch(self) -> None:
+    def test_qemu_backend_rejects_non_aarch64_arch(self) -> None:
         elf_path = self.compile_program("aarch64_sample.c")
         output_path = self.state_dir / "arm32.log"
-        self.assertEqual(self.run_cli("set-target", "127.0.0.1:1234").returncode, 0)
+        self.assertEqual(self.run_cli("set-target", AARCH64_PORT).returncode, 0)
         self.assertEqual(self.run_cli("set-arch", "arm32").returncode, 0)
         self.assertEqual(self.run_cli("set-elf", str(elf_path)).returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(output_path)).returncode, 0)
@@ -165,27 +166,27 @@ class NativeGdbBackendTest(unittest.TestCase):
 
         result = self.run_cli("start")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("error: gdb-native backend currently supports only aarch64", result.stdout)
+        self.assertIn("error: gdb-qemu-aarch64 backend supports only aarch64", result.stdout)
 
-    def test_gdb_native_backend_captures_inst_trace_for_stripped_elf(self) -> None:
+    def test_qemu_backend_captures_inst_trace_for_stripped_aarch64_elf(self) -> None:
         elf_path = self.compile_stripped_program("aarch64_sample.c")
         output_path = self.state_dir / "aarch64_stripped.log"
         self.configure(elf_path, output_path, "inst")
 
         start = self.run_cli("start")
-        self.assertEqual(start.returncode, 0, msg=start.stdout)
+        self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
         save = self.run_cli("save")
-        self.assertEqual(save.returncode, 0, msg=save.stdout)
+        self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
 
         content = output_path.read_text(encoding="utf-8")
-        self.assertIn("backend=gdb-native", content)
+        self.assertIn("backend=gdb-qemu-aarch64", content)
         self.assertNotIn("call ", content)
         self.assertNotIn("ret ", content)
         instruction_lines = [line for line in content.splitlines() if line.startswith("0x")]
         self.assertGreaterEqual(len(instruction_lines), 5)
         self.run_cli("stop")
 
-    def test_gdb_native_backend_rejects_call_trace_for_stripped_elf(self) -> None:
+    def test_qemu_backend_rejects_call_trace_for_stripped_aarch64_elf(self) -> None:
         elf_path = self.compile_stripped_program("aarch64_sample.c")
         output_path = self.state_dir / "aarch64_stripped_both.log"
         self.configure(elf_path, output_path, "both")
@@ -197,15 +198,15 @@ class NativeGdbBackendTest(unittest.TestCase):
             result.stdout,
         )
 
-    def test_gdb_native_backend_can_emit_registers(self) -> None:
+    def test_qemu_backend_can_emit_registers_for_aarch64(self) -> None:
         elf_path = self.compile_program("aarch64_sample.c")
         output_path = self.state_dir / "aarch64_registers.log"
         self.configure(elf_path, output_path, "both", registers="on")
 
         start = self.run_cli("start")
-        self.assertEqual(start.returncode, 0, msg=start.stdout)
+        self.assertEqual(start.returncode, 0, msg=start.stdout or start.stderr)
         save = self.run_cli("save")
-        self.assertEqual(save.returncode, 0, msg=save.stdout)
+        self.assertEqual(save.returncode, 0, msg=save.stdout or save.stderr)
 
         content = output_path.read_text(encoding="utf-8")
         self.assertIn("[registers] on", content)

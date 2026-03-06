@@ -200,8 +200,8 @@ ret main
 ## 测试与验收场景
 
 - 当前测试阶段：暂不在 `SkyEye` 后端做集成验证，优先验证真实 GDB 调试链路。
-- 当前环境判断：宿主机为 `Darwin arm64`，指定 Docker 容器 `ubuntu` 为 `Linux aarch64`。
-- `aarch64` 测试策略：在 Docker 容器 `ubuntu` 内原生编译并运行测试 ELF，使用容器内 `gdb` 做真实 GDB 调试验证。
+- 当前环境判断：优先在原生 Ubuntu 或指定 Docker 容器 `ubuntu` 中执行真实测试，当前真实后端测试统一走 QEMU gdb stub。
+- `aarch64` 测试策略：使用 `qemu-aarch64` 提供 gdb stub，再由 `gdb-multiarch` 连接执行真实 GDB 调试验证。
 - `arm32` / `thumb` / `thumb2` 测试策略：使用 `qemu-arm` 提供 gdb stub，再由 `gdb-multiarch` 连接执行真实 GDB 调试验证。
 - `riscv32` / `riscv64` 测试策略：使用 `qemu-riscv32` / `qemu-riscv64` 提供 gdb stub，再由 `gdb-multiarch` 连接执行真实 GDB 调试验证。
 - 测试资产来源：所有测试 ELF 均由仓库内自写源码编译生成，不依赖外部未知二进制。
@@ -223,7 +223,7 @@ ret main
 - 用户态程序验证：除基础样例和复杂样例外，还应加入更贴近真实场景的 `qemu-user` 用户态程序，覆盖动态链接、`libc` 调用、字符串处理、格式化、分支和循环。
 - `printf` 用户态程序验证：应加入显式调用 `printf` / `snprintf` 的用户态 ELF，验证格式化输出路径和 `plt` 调用边界在真实调试链路下可被采集。
 - 动态库调用验证：应确认 trace 不把 `printf@plt`、`snprintf@plt` 之类的 PLT 跳板单独视为最终调用边界，而是尽量继续展开真实函数或地址级子调用。
-- 环境准备：当前开发容器已具备 `gdb`、`gdb-multiarch`、`qemu-arm`、`qemu-riscv32`、`qemu-riscv64`、`qemu-system-aarch64`、`aarch64-linux-gnu-gcc`、`arm-linux-gnueabihf-gcc`、`riscv64-linux-gnu-gcc`。
+- 环境准备：当前开发环境应具备 `gdb-multiarch`、`qemu-aarch64`、`qemu-arm`、`qemu-riscv32`、`qemu-riscv64`、`aarch64-linux-gnu-gcc`、`arm-linux-gnueabihf-gcc`、`riscv64-linux-gnu-gcc`。
 - 环境准备：在新的测试环境中，若缺失 `gdb-multiarch`、ARM32 交叉编译工具链或 RISC-V 交叉编译工具链，测试计划必须包含安装步骤。
 - `aarch64` 编译策略：使用容器内现有 `aarch64-linux-gnu-gcc` 编译测试 ELF。
 - `arm32` 编译策略：使用 ARM32 交叉编译器并指定 `-marm`。
@@ -231,7 +231,7 @@ ret main
 - `thumb2` 编译策略：使用 ARM32 交叉编译器并指定 `-mthumb -march=armv7-a` 或等价支持 Thumb-2 的目标参数。
 - `riscv32` 编译策略：使用 `riscv64-linux-gnu-gcc` 并指定 `-march=rv32imac -mabi=ilp32`，必要时配合自定义启动汇编和静态链接。
 - `riscv64` 编译策略：使用 `riscv64-linux-gnu-gcc` 并指定 `-march=rv64gc -mabi=lp64d`，必要时配合自定义启动汇编和静态链接。
-- `aarch64` 真实 GDB 测试：验证 `gdbtrace` 能从容器内原生 GDB 场景中获取指令流，并正确还原 `call` / `ret` 层级。
+- `aarch64` QEMU stub 测试：使用 `qemu-aarch64 -g <port> ./prog` 启动目标，再由 `gdb-multiarch` 连接，验证指令流、调用序列和缩进层级。
 - `arm32` / `thumb` / `thumb2` QEMU stub 测试：使用 `qemu-arm -g <port> ./prog` 启动目标，再由 `gdb-multiarch` 连接，验证三类模式的指令流、调用序列和缩进层级。
 - `riscv32` / `riscv64` QEMU stub 测试：使用 `qemu-riscv32 -g <port> ./prog` 或 `qemu-riscv64 -g <port> ./prog` 启动目标，再由 `gdb-multiarch` 连接，验证两类模式的指令流、调用序列和缩进层级。
 - `qemu-user` 用户态测试：使用交叉编译器构建真实用户态 ELF，并通过 `qemu-arm`、`qemu-riscv64` 等用户态模拟器执行，验证 trace 在动态链接和常见 `libc` 调用场景下仍可用。
@@ -270,7 +270,7 @@ ret main
 - 用户态程序场景：对带 `libc` 调用的用户态程序执行真实 `qemu-user` 调试，确认 trace 至少能稳定覆盖业务函数与关键 `libc` 调用边界。
 - 查看一致性场景：需求文档中的格式示例与模式说明、测试项一致，不残留旧字段写法。
 - 查看兼容性场景：确认在支持 ANSI 的查看方式下颜色可见，在不支持 ANSI 的环境中至少不影响文本内容可读性。
-- `aarch64` 验收标准：在原生容器环境中完成真实 GDB 调试采集。
+- `aarch64` 验收标准：通过 `qemu-aarch64` stub + `gdb-multiarch` 完成真实 GDB 调试采集。
 - `arm32` / `thumb` / `thumb2` 验收标准：通过 QEMU stub + `gdb-multiarch` 完成真实 GDB 调试采集。
 - `riscv32` / `riscv64` 验收标准：通过 QEMU stub + `gdb-multiarch` 完成真实 GDB 调试采集。
 - 测试资产验收标准：所有测试 ELF 都来自仓库内源码编译。
@@ -291,7 +291,7 @@ ret main
 
 - 默认 `gdbtrace` 通过标准远程调试方式接入 `SkyEye`，不直接修改模拟器内部实现。
 - 当前阶段默认不接 `SkyEye` 后端做测试，只验证真实 GDB 调试链路。
-- 当前阶段默认 `aarch64` 采用容器内原生测试，不强制走 QEMU。
+- 当前阶段默认 `aarch64`、`arm32`、`thumb`、`thumb2`、`riscv32`、`riscv64` 的真实测试统一采用 QEMU gdb stub + `gdb-multiarch`。
 - 当前阶段默认 `arm32`、`thumb`、`thumb2` 采用 QEMU gdb stub + `gdb-multiarch`。
 - 当前阶段默认 `riscv32`、`riscv64` 采用 QEMU gdb stub + `gdb-multiarch`。
 - 当前阶段默认测试用 ELF 由仓库内自写源码编译生成。
