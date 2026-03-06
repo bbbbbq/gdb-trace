@@ -33,7 +33,7 @@ cd /code/gdb_trace
 
 ## 安装到 GDB
 
-如果希望在 GDB 启动后直接拥有 `gdbtrace-run` 命令，可让 GDB 加载仓库内初始化脚本：
+如果希望在 GDB 启动后直接拥有 `gdbtrace` 相关命令，可让 GDB 加载仓库内初始化脚本：
 
 ```gdb
 python
@@ -45,10 +45,24 @@ end
 建议把这段加入用户级 `~/.gdbinit`。加载完成后，可在 GDB 中执行：
 
 ```gdb
-help gdbtrace-run
+help user-defined
 ```
 
-`gdbtrace-run` 会调用 `gdbtrace.gdb_agent.run()`，并继续使用现有的 `GDBTRACE_GDB_*` 环境变量约定。
+安装完成后，GDB 内可直接使用与 CLI 一致的命令名，例如：
+
+```gdb
+set-target 127.0.0.1:1234
+set-arch aarch64
+set-elf demo.elf
+set-output trace.log
+set-mode both
+show-config
+start
+save
+stop
+```
+
+同时仍保留低层 `gdbtrace-run` 命令，它会直接调用 `gdbtrace.gdb_agent.run()`，继续使用现有的 `GDBTRACE_GDB_*` 环境变量约定。
 
 ## CLI 模型
 

@@ -5,7 +5,7 @@
 - 当前仓库已进入最小代码实现阶段。
 - 第十七批代码已完成：已收敛寄存器输出 review 问题，包括采样时序、过滤重建保留和 `call` 模式采样收敛。
 - 第十八批代码已完成：已补齐原生环境下的 GDB init 自动化与交互式安装验证。
-- 正在推进第十九批代码：GDB 内命令集与 CLI 命令集对齐。
+- 第十九批代码已完成：GDB 内命令集已与 CLI 命令集对齐。
 - 已完成核心需求文档整理，主文档为 [README.md](/Users/caojunze424/code/gdb_trace/README.md)。
 - 已建立协作约束文档 [AGENTS.md](/Users/caojunze424/code/gdb_trace/AGENTS.md)。
 - 已完成第一批代码：CLI 配置状态管理。
@@ -75,6 +75,8 @@
 - 已新增 `gdbtrace/gdb_init.py`，可供 GDB 通过 `runpy.run_path(...)` 加载，并注册 `gdbtrace-run` 用户命令。
 - 已完成当前用户 `~/.gdbinit` 的最小安装接入，使本机 GDB 启动后自动加载 `gdbtrace` 初始化脚本。
 - 已补充 `tests/test_gdb_init.py`，覆盖 `gdb_init.py` 的重复加载、命令注册，以及用户级 `~/.gdbinit` 自动加载场景。
+- 已在 `gdbtrace/gdb_init.py` 中注册与 CLI 一致的 GDB 用户命令：`set-target`、`set-default-target`、`show-target`、`clear-target`、`clear-default-target`、`set-arch`、`set-elf`、`set-output`、`set-mode`、`set-registers`、`show-config`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode`、`clear-registers`、`start`、`pause`、`save`、`stop`。
+- 已让 GDB 用户命令复用现有 CLI handler、状态文件与校验逻辑，避免形成第二套命令实现。
 
 ## 当前验证状态
 
@@ -130,6 +132,8 @@
 - 已在宿主机执行 `gdb -q -batch -ex "help user-defined"`，确认普通启动 GDB 后已自动出现 `gdbtrace-run`。
 - 已在宿主机执行扩展后的 `python3 -m unittest tests.test_gdb_init -v`，当前 2 项 `gdb_init` 自动化测试全部通过，覆盖 `.gdbinit` 自动加载和交互式会话帮助查询。
 - 已在宿主机执行真实交互式 GDB 会话，并在提示符下完成 `help gdbtrace-run -> quit` 验证，确认当前原生环境安装可直接识别该命令。
+- 已在宿主机执行更新后的 `python3 -m unittest tests.test_gdb_init -v`，确认 `help user-defined` 可列出全部 `gdbtrace` GDB 命令，且交互式 GDB 中可直接完成 `set-target -> set-arch -> set-elf -> set-output -> set-mode -> start -> save -> stop` 最小流程。
+- 已在宿主机执行真实交互式 GDB 会话，并直接使用 `set-target`、`set-arch`、`set-elf`、`set-output`、`set-mode`、`show-config`、`show-target`、`start`、`save`、`stop` 验证命令集可用；同时确认 `/tmp/trace.log` 与 `/tmp/trace.call.log` 成功落盘。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent -v`，确认寄存器采样发生在 `stepi` 之后，并覆盖 `_step_until_exit()` 路径。
 - 已在宿主机执行 `python3 -m unittest tests.test_trace_filters -v`，确认过滤重建深度后仍保留寄存器载荷并正确输出 `regs:` 行。
 - 已在宿主机执行 `python3 -m unittest tests.test_log_formatting -v`，确认 `call` 模式在 `set-registers on` 下不会采样或渲染寄存器内容。
@@ -143,11 +147,9 @@
 
 ## 下一步
 
-1. 在 GDB init 中注册与 `USAGE.md` 一致的 `set-*` / `show-*` / `clear-*` / 生命周期命令。
-2. 补充自动化测试，验证 `help user-defined` 中可见全部命令，且交互式 GDB 中可直接完成最小 trace 流程。
-3. 在 `docker` 能力恢复后，于指定容器 `ubuntu` 中补做本轮寄存器修复的容器回归验证。
-4. 继续恢复并推进 GDB 安装入口相关容器验证。
-5. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
+1. 在 `docker` 能力恢复后，于指定容器 `ubuntu` 中补做本轮寄存器修复和 GDB 命令集对齐的容器回归验证。
+2. 继续恢复并推进 GDB 安装入口相关容器验证。
+3. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
 
 ## 已知阻塞或风险
 
