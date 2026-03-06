@@ -17,6 +17,7 @@ def _rebase_depth(events: list[TraceEvent]) -> list[TraceEvent]:
             function=event.function,
             pc=event.pc,
             instruction=event.instruction,
+            registers=event.registers,
         )
         for event in events
     ]
