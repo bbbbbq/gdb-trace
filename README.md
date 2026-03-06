@@ -72,6 +72,7 @@
 - `pause`：暂停当前运行中的 trace。
 - `save`：将当前 trace 的快照写回 `set-output` 设置的原始路径，不结束 trace。
 - `stop`：停止当前 trace，并将最终完整结果写回 `set-output` 设置的原始路径。
+- 在 GDB 当前会话采集路径中，若 `gdbtrace start` 执行中被 `Ctrl+C` 中断，已采集事件会保留为 `paused` trace，随后仍可执行 `save` 或 `stop`。
 
 `set-output` 语义：
 
@@ -102,6 +103,7 @@ GDB 上下文语义：
 - `start` 执行前必须能够确定 `arch`、`elf`：优先使用 `set-arch` / `set-elf`，否则尝试从当前 GDB 会话自动继承。
 - 当启用真实 GDB 会话采集时，`start` 还必须确认当前 inferior 已停在可读取指令的位置。
 - 若存在缺失项，`start` 直接失败，并一次性列出全部缺失项。
+- 当 `start` 已经进入真实 GDB 单步采集后，`Ctrl+C` 不再丢弃已采集事件，而是将当前 trace 收敛为可继续 `save` / `stop` 的暂停态。
 - `pause`、`save`、`stop` 不接受新的 trace 配置参数。
 - `save` 不接受新的输出路径，始终写回 `set-output` 设置的原始路径。
 - `set-mode both` 时，`save` / `stop` 会同时写回主 `both` 日志和派生的 `call` 日志。

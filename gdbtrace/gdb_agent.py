@@ -4,6 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Callable
 
 import gdb
 
@@ -241,7 +242,13 @@ def _emit_stack_transition(
         )
 
 
-def _step_until_exit(max_steps: int, events: list[dict[str, object]], arch: str, register_output: bool) -> int:
+def _step_until_exit(
+    max_steps: int,
+    events: list[dict[str, object]],
+    arch: str,
+    register_output: bool,
+    event_sink: Callable[[list[dict[str, object]]], None] | None = None,
+) -> int:
     steps = 0
     while steps < max_steps:
         try:
@@ -251,20 +258,30 @@ def _step_until_exit(max_steps: int, events: list[dict[str, object]], arch: str,
                 break
             raise
         registers, exited = _step_and_capture_registers(arch, register_output)
-        events.append(
-            {
-                "kind": "inst",
-                "depth": 0,
-                "function": "",
-                "pc": pc,
-                "instruction": instruction,
-                "registers": registers,
-            }
-        )
+        event = {
+            "kind": "inst",
+            "depth": 0,
+            "function": "",
+            "pc": pc,
+            "instruction": instruction,
+            "registers": registers,
+        }
+        events.append(event)
+        if event_sink is not None:
+            event_sink([event])
         steps += 1
         if exited:
             break
     return steps
+
+
+def _is_user_interrupt(exc: BaseException) -> bool:
+    if isinstance(exc, KeyboardInterrupt):
+        return True
+    if isinstance(exc, gdb.error):
+        message = str(exc).lower()
+        return "quit" in message or "interrupted" in message
+    return False
 
 
 def capture_current_session(
@@ -272,7 +289,8 @@ def capture_current_session(
     mode: str,
     register_output: bool,
     max_steps: int,
-) -> list[dict[str, object]]:
+    event_sink: Callable[[list[dict[str, object]]], None] | None = None,
+) -> tuple[list[dict[str, object]], bool]:
     gdb.execute("set pagination off")
     gdb.execute("set confirm off")
     gdb.execute("set print thread-events off")
@@ -287,50 +305,104 @@ def capture_current_session(
         raise RuntimeError("failed to inspect current inferior state") from exc
 
     events: list[dict[str, object]] = []
+
+    def record_event(event: dict[str, object]) -> None:
+        events.append(event)
+        if event_sink is not None:
+            event_sink([event])
+
+    def record_stack_events(pending_stack: list[str]) -> None:
+        for depth, function in enumerate(pending_stack):
+            record_event({"kind": "call", "depth": depth, "function": function, "pc": "", "instruction": ""})
+
+    def record_stack_transition(previous_stack: list[str], next_stack: list[str]) -> None:
+        common = _common_prefix_size(previous_stack, next_stack)
+        for depth in range(len(previous_stack) - 1, common - 1, -1):
+            record_event(
+                {
+                    "kind": "ret",
+                    "depth": depth,
+                    "function": previous_stack[depth],
+                    "pc": "",
+                    "instruction": "",
+                }
+            )
+        for depth in range(common, len(next_stack)):
+            record_event(
+                {
+                    "kind": "call",
+                    "depth": depth,
+                    "function": next_stack[depth],
+                    "pc": "",
+                    "instruction": "",
+                }
+            )
+
     if mode == "inst":
-        steps = _step_until_exit(max_steps, events, arch, register_output)
+        try:
+            steps = _step_until_exit(max_steps, events, arch, register_output, event_sink=event_sink)
+        except BaseException as exc:
+            if _is_user_interrupt(exc):
+                return events, True
+            raise
         if steps >= max_steps:
             raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
-        return events
+        return events, False
 
     stack = _relevant_stack(require_main=False)
     if not stack:
         raise RuntimeError("failed to determine current call stack")
 
-    _emit_call_events(events, stack)
+    if event_sink is None:
+        _emit_call_events(events, stack)
+    else:
+        record_stack_events(stack)
 
     steps = 0
-    while steps < max_steps:
-        current_stack = list(stack)
-        if not current_stack:
-            break
+    interrupted = False
+    try:
+        while steps < max_steps:
+            current_stack = list(stack)
+            if not current_stack:
+                break
 
-        pc, instruction = _current_instruction()
-        registers, exited = _step_and_capture_registers(arch, register_output)
-        events.append(
-            {
-                "kind": "inst",
-                "depth": len(current_stack),
-                "function": current_stack[-1],
-                "pc": pc,
-                "instruction": instruction,
-                "registers": registers,
-            }
-        )
-        steps += 1
-        if exited:
-            break
+            pc, instruction = _current_instruction()
+            registers, exited = _step_and_capture_registers(arch, register_output)
+            record_event(
+                {
+                    "kind": "inst",
+                    "depth": len(current_stack),
+                    "function": current_stack[-1],
+                    "pc": pc,
+                    "instruction": instruction,
+                    "registers": registers,
+                }
+            )
+            steps += 1
+            if exited:
+                break
 
-        observed_stack = _relevant_stack(require_main=False)
-        next_stack = _next_stack(current_stack, observed_stack, instruction)
-        _emit_stack_transition(events, current_stack, next_stack)
-        stack = next_stack
+            observed_stack = _relevant_stack(require_main=False)
+            next_stack = _next_stack(current_stack, observed_stack, instruction)
+            if event_sink is None:
+                _emit_stack_transition(events, current_stack, next_stack)
+            else:
+                record_stack_transition(current_stack, next_stack)
+            stack = next_stack
+    except BaseException as exc:
+        if _is_user_interrupt(exc):
+            interrupted = True
+        else:
+            raise
 
-    if steps >= max_steps:
+    if not interrupted and steps >= max_steps:
         raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
 
-    _emit_stack_transition(events, stack, [])
-    return events
+    if event_sink is None:
+        _emit_stack_transition(events, stack, [])
+    else:
+        record_stack_transition(stack, [])
+    return events, interrupted
 
 
 def run() -> None:

@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from gdbtrace.trace_model import sample_trace_events
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -127,6 +129,48 @@ class CliLifecycleTest(unittest.TestCase):
         result = self.run_cli("start", "--start", "0x400580")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error: cannot change trace arguments while resuming a paused trace", result.stdout)
+
+    def test_save_recovers_interrupted_current_session_trace_from_spool(self) -> None:
+        self.configure_trace()
+        spool_path = self.state_dir / "runtime.json.events.jsonl"
+        runtime_payload = {
+            "status": "running",
+            "started_at": "2026-03-06T00:00:00+00:00",
+            "target": "gdb-managed",
+            "config": {
+                "arch": "aarch64",
+                "elf": "demo.elf",
+                "output": str(self.output_path),
+                "mode": "both",
+                "registers": "off",
+            },
+            "capture_backend": "gdb-current-session",
+            "event_count": 0,
+            "filters": {
+                "start": "",
+                "stop": "",
+                "filter_func": "",
+                "filter_range": "",
+            },
+            "events": [],
+            "capture_in_progress": True,
+            "capture_spool": str(spool_path),
+        }
+        (self.state_dir / "runtime.json").write_text(json.dumps(runtime_payload), encoding="utf-8")
+        spool_path.write_text(
+            "\n".join(json.dumps(event.__dict__) for event in sample_trace_events("aarch64")) + "\n",
+            encoding="utf-8",
+        )
+
+        saved = self.run_cli("save")
+        self.assertEqual(saved.returncode, 0)
+        self.assertIn(f"trace saved to {self.output_path}, {self.call_output_path}", saved.stdout)
+        normalized_runtime = json.loads((self.state_dir / "runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(normalized_runtime["status"], "paused")
+        self.assertNotIn("capture_in_progress", normalized_runtime)
+        self.assertFalse(spool_path.exists())
+        self.assertTrue(self.output_path.exists())
+        self.assertIn("[trace snapshot]", self.output_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

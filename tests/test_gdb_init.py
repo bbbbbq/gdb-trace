@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-import os
 import json
+import os
+import fcntl
+import pty
+import select
 import subprocess
 import tempfile
+import termios
+import time
 import unittest
 from pathlib import Path
 
@@ -316,6 +321,159 @@ class GdbInitInstallTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
             self.assertIn("current inferior is not stopped at a debuggable location", result.stderr)
+
+    def test_gdbtrace_start_interrupt_keeps_partial_trace_for_save_and_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_home, tempfile.TemporaryDirectory() as temp_workdir:
+            workdir = Path(temp_workdir)
+            gdbinit_path = Path(temp_home) / ".gdbinit"
+            program_path = workdir / "interrupt_probe"
+            source_path = workdir / "interrupt_probe.c"
+            output_path = workdir / "interrupt.log"
+            source_path.write_text(
+                "\n".join(
+                    [
+                        "#include <stdio.h>",
+                        "int main(void) {",
+                        "    volatile unsigned long counter = 0;",
+                        "    while (1) {",
+                        "        counter += 1;",
+                        "    }",
+                        "    return (int)counter;",
+                        "}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            compile_result = subprocess.run(
+                ["cc", "-g", "-O0", str(source_path), "-o", str(program_path)],
+                cwd=workdir,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(compile_result.returncode, 0, msg=compile_result.stderr)
+
+            gdbinit_path.write_text(
+                "\n".join(
+                    [
+                        "python",
+                        "import runpy",
+                        f"runpy.run_path({str(INIT_SCRIPT)!r}, run_name='__main__')",
+                        "end",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            env.pop("PYTHONPATH", None)
+            env["GDBTRACE_GLOBAL_CONFIG"] = str(workdir / "global.json")
+            env["GDBTRACE_SESSION_FILE"] = str(workdir / "session.json")
+            env["GDBTRACE_RUNTIME_FILE"] = str(workdir / "runtime.json")
+            env["GDBTRACE_GDB_MAX_STEPS"] = "200000"
+
+            master_fd, slave_fd = pty.openpty()
+
+            def _preexec() -> None:
+                os.setsid()
+                fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+
+            process = subprocess.Popen(
+                ["gdb", "-q", str(program_path)],
+                cwd=workdir,
+                env=env,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                text=False,
+                preexec_fn=_preexec,
+                close_fds=True,
+            )
+            os.close(slave_fd)
+
+            def write_input(text: str) -> None:
+                os.write(master_fd, text.encode("utf-8"))
+
+            def read_until(marker: str, timeout: float = 15.0) -> str:
+                deadline = time.time() + timeout
+                chunks: list[bytes] = []
+                while time.time() < deadline:
+                    ready, _, _ = select.select([master_fd], [], [], 0.1)
+                    if not ready:
+                        continue
+                    chunk = os.read(master_fd, 4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    text = b"".join(chunks).decode("utf-8", errors="replace")
+                    if marker in text:
+                        return text
+                raise AssertionError(f"did not observe marker: {marker}")
+
+            def read_command_output(marker: str, timeout: float = 20.0) -> str:
+                deadline = time.time() + timeout
+                chunks: list[bytes] = []
+                while time.time() < deadline:
+                    ready, _, _ = select.select([master_fd], [], [], 0.1)
+                    if not ready:
+                        continue
+                    chunk = os.read(master_fd, 4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    text = b"".join(chunks).decode("utf-8", errors="replace")
+                    marker_index = text.find(marker)
+                    if marker_index != -1 and "(gdb)" in text[marker_index:]:
+                        return text
+                raise AssertionError(f"did not observe completed command output for: {marker}")
+
+            try:
+                read_until("(gdb)")
+                write_input("set pagination off\n")
+                write_input("set confirm off\n")
+                write_input("break main\n")
+                write_input("gdbtrace set-arch aarch64\n")
+                write_input(f"gdbtrace set-elf {program_path}\n")
+                write_input(f"gdbtrace set-output {output_path}\n")
+                write_input("gdbtrace set-mode both\n")
+                write_input("run\n")
+                read_until("Breakpoint 1", timeout=20.0)
+                read_until("(gdb)", timeout=20.0)
+                write_input("gdbtrace start\n")
+                time.sleep(1.0)
+                os.write(master_fd, b"\x03")
+                interrupted_output = read_command_output(
+                    "trace interrupted and paused; use gdbtrace save or gdbtrace stop",
+                    timeout=20.0,
+                )
+
+                write_input("gdbtrace save\n")
+                save_output = read_command_output("trace saved to", timeout=20.0)
+                write_input("gdbtrace stop\n")
+                stop_output = read_command_output("trace stopped and saved to", timeout=20.0)
+                write_input("kill\n")
+                read_until("(gdb)")
+                write_input("quit\n")
+                process.wait(timeout=10)
+            finally:
+                os.close(master_fd)
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=5)
+
+            combined_output = interrupted_output + save_output + stop_output
+            self.assertEqual(process.returncode, 0, msg=combined_output)
+            self.assertIn("trace interrupted and paused; use gdbtrace save or gdbtrace stop", combined_output)
+            self.assertIn("trace saved to", combined_output)
+            self.assertIn("trace stopped and saved to", combined_output)
+            self.assertTrue(output_path.exists())
+            content = output_path.read_text(encoding="utf-8")
+            self.assertIn("[trace final]", content)
+            self.assertIn("call main", content)
+            self.assertNotIn("no active trace to save", combined_output)
+            self.assertNotIn("no active trace to stop", combined_output)
 
 
 if __name__ == "__main__":

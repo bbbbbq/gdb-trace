@@ -65,6 +65,8 @@ gdbtrace stop
 
 同样地，如果你在 `gdb-multiarch` 或支持对应架构字符串的 GDB 中已经先执行了 `set architecture aarch64`、`set architecture arm`、`set architecture riscv:rv32` 或 `set architecture riscv:rv64`，那么 `gdbtrace start` 在未显式执行 `gdbtrace set-arch` 时，也会自动继承当前架构设置。`thumb` / `thumb2` 目前仍建议显式执行 `gdbtrace set-arch`。
 
+在 GDB 当前会话采集路径中，如果 `gdbtrace start` 执行过程中按下 `Ctrl+C`，当前已经采集到的事件不会丢失；这次 trace 会转入可 `gdbtrace save` / `gdbtrace stop` 的暂停态。
+
 如果需要直接调用低层 agent，也可使用：
 
 ```gdb
@@ -398,7 +400,18 @@ target remote <ip:port>
 
 说明已经进入真实调用路径，但当前 GDB 无法稳定提供函数名。此时 `gdbtrace` 用地址型函数名补齐调用层级，而不是直接丢失这一层。
 
-### 4. 为什么 `both` 会生成两份日志
+### 4. `gdbtrace start` 中途按下 `Ctrl+C` 会怎样
+
+当前 GDB 会话采集路径下，`Ctrl+C` 会中断单步采集，但已经采到的事件会被保留。
+
+此时可直接继续执行：
+
+```gdb
+gdbtrace save
+gdbtrace stop
+```
+
+### 5. 为什么 `both` 会生成两份日志
 
 这是当前设计要求：
 

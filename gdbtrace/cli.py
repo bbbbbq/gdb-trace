@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,7 @@ from .state import (
     validate_registers,
     validate_target,
 )
+from .trace_model import TraceEvent
 
 
 CommandHandler = Callable[[argparse.Namespace, Paths], int]
@@ -96,7 +98,10 @@ def cmd_clear_registers(_: argparse.Namespace, paths: Paths) -> int:
 
 
 def _active_runtime(paths: Paths) -> dict[str, str]:
-    return runtime_state(paths)
+    runtime = runtime_state(paths)
+    if runtime.get("capture_in_progress"):
+        runtime = _finalize_interrupted_runtime(paths, runtime)
+    return runtime
 
 
 def _required_config(session: dict[str, str]) -> list[str]:
@@ -146,6 +151,118 @@ def _capture_registers_enabled(session: dict[str, str]) -> bool:
     return session.get("registers", "off") == "on" and session.get("mode") != "call"
 
 
+def _is_capture_interrupt(exc: BaseException) -> bool:
+    if isinstance(exc, KeyboardInterrupt):
+        return True
+    message = str(exc).lower()
+    return "interrupted" in message or "quit" in message or "sigint" in message
+
+
+def _capture_spool_path(paths: Paths) -> Path:
+    runtime_name = paths.runtime_file.name
+    return paths.runtime_file.with_name(f"{runtime_name}.events.jsonl")
+
+
+def _runtime_filters(args: argparse.Namespace) -> dict[str, str]:
+    return {
+        "start": args.start_addr or "",
+        "stop": args.stop_addr or "",
+        "filter_func": args.filter_func or "",
+        "filter_range": args.filter_range or "",
+    }
+
+
+def _runtime_payload(
+    session: dict[str, str],
+    filters: dict[str, str],
+    *,
+    status: str,
+    started_at: str,
+    target: str,
+    capture_backend: str,
+    events: list[TraceEvent] | None = None,
+) -> dict[str, object]:
+    payload_events = events or []
+    return {
+        "status": status,
+        "started_at": started_at,
+        "target": target,
+        "config": {
+            "arch": session["arch"],
+            "elf": session["elf"],
+            "output": session["output"],
+            "mode": session["mode"],
+            "registers": session.get("registers", "off"),
+        },
+        "capture_backend": capture_backend,
+        "event_count": len(payload_events),
+        "filters": filters,
+        "events": [event.__dict__ for event in payload_events],
+    }
+
+
+def _append_spooled_events(spool_path: Path, events: list[dict[str, object]]) -> None:
+    if not events:
+        return
+    spool_path.parent.mkdir(parents=True, exist_ok=True)
+    with spool_path.open("a", encoding="utf-8") as handle:
+        for event in events:
+            handle.write(json.dumps(event, sort_keys=True))
+            handle.write("\n")
+
+
+def _load_spooled_events(spool_path: Path) -> list[TraceEvent]:
+    if not spool_path.exists():
+        return []
+    events: list[TraceEvent] = []
+    with spool_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            events.append(TraceEvent(**json.loads(stripped)))
+    return events
+
+
+def _filtered_runtime_events(
+    raw_events: list[TraceEvent],
+    filters: dict[str, str],
+    *,
+    best_effort: bool,
+) -> list[TraceEvent]:
+    try:
+        return apply_filters(
+            raw_events,
+            start=filters.get("start", ""),
+            stop=filters.get("stop", ""),
+            filter_func=filters.get("filter_func", ""),
+            filter_range=filters.get("filter_range", ""),
+        )
+    except GdbTraceError:
+        if best_effort:
+            return raw_events
+        raise
+
+
+def _finalize_interrupted_runtime(paths: Paths, runtime: dict[str, object]) -> dict[str, object]:
+    spool_text = str(runtime.get("capture_spool", ""))
+    spool_path = Path(spool_text) if spool_text else _capture_spool_path(paths)
+    raw_events = _load_spooled_events(spool_path)
+    filtered_events = _filtered_runtime_events(
+        raw_events,
+        runtime.get("filters", {}),
+        best_effort=True,
+    )
+    runtime["events"] = [event.__dict__ for event in filtered_events]
+    runtime["event_count"] = len(filtered_events)
+    runtime["status"] = "paused"
+    runtime.pop("capture_in_progress", None)
+    runtime.pop("capture_spool", None)
+    save_runtime_state(paths, runtime)
+    clear_file(spool_path)
+    return runtime
+
+
 def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
     runtime = _active_runtime(paths)
     if runtime.get("status") == "running":
@@ -164,45 +281,69 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
         raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
 
     backend = resolve_capture_backend()
-    capture_result = backend.capture(
-        CaptureRequest(
-            arch=session["arch"],
-            mode=session["mode"],
-            target=_capture_target_from_env(),
-            elf=session["elf"],
-            registers=_capture_registers_enabled(session),
+    started_at = datetime.now(timezone.utc).isoformat()
+    filters = _runtime_filters(args)
+    capture_request = CaptureRequest(
+        arch=session["arch"],
+        mode=session["mode"],
+        target=_capture_target_from_env(),
+        elf=session["elf"],
+        registers=_capture_registers_enabled(session),
+    )
+    spool_path = _capture_spool_path(paths)
+    clear_file(spool_path)
+    provisional_runtime = _runtime_payload(
+        session,
+        filters,
+        status="running",
+        started_at=started_at,
+        target="gdb-managed" if backend.name == "gdb-current-session" else backend.name,
+        capture_backend=backend.name,
+    )
+    if backend.name == "gdb-current-session":
+        provisional_runtime["capture_in_progress"] = True
+        provisional_runtime["capture_spool"] = str(spool_path)
+    save_runtime_state(paths, provisional_runtime)
+    try:
+        capture_result = backend.capture(
+            capture_request,
+            event_sink=(
+                (lambda pending_events: _append_spooled_events(spool_path, pending_events))
+                if backend.name == "gdb-current-session"
+                else None
+            ),
         )
-    )
-    filtered_events = apply_filters(
-        capture_result.events,
-        start=args.start_addr or "",
-        stop=args.stop_addr or "",
-        filter_func=args.filter_func or "",
-        filter_range=args.filter_range or "",
-    )
-    new_runtime = {
-        "status": "running",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "target": capture_result.target_label,
-        "config": {
-            "arch": session["arch"],
-            "elf": session["elf"],
-            "output": session["output"],
-            "mode": session["mode"],
-            "registers": session.get("registers", "off"),
-        },
-        "capture_backend": capture_result.backend,
-        "event_count": len(filtered_events),
-        "filters": {
-            "start": args.start_addr or "",
-            "stop": args.stop_addr or "",
-            "filter_func": args.filter_func or "",
-            "filter_range": args.filter_range or "",
-        },
-        "events": [event.__dict__ for event in filtered_events],
-    }
-    save_runtime_state(paths, new_runtime)
-    print("trace started")
+    except BaseException as exc:
+        if not (backend.name == "gdb-current-session" and _is_capture_interrupt(exc)):
+            clear_file(spool_path)
+            clear_file(paths.runtime_file)
+        raise
+
+    try:
+        filtered_events = _filtered_runtime_events(
+            capture_result.events,
+            filters,
+            best_effort=False,
+        )
+        new_runtime = _runtime_payload(
+            session,
+            filters,
+            status="paused" if capture_result.interrupted else "running",
+            started_at=started_at,
+            target=capture_result.target_label,
+            capture_backend=capture_result.backend,
+            events=filtered_events,
+        )
+        save_runtime_state(paths, new_runtime)
+        clear_file(spool_path)
+    except BaseException:
+        clear_file(spool_path)
+        clear_file(paths.runtime_file)
+        raise
+    if capture_result.interrupted:
+        print("trace interrupted and paused; use gdbtrace save or gdbtrace stop")
+    else:
+        print("trace started")
     return 0
 
 

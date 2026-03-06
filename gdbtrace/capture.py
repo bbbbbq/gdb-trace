@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import Callable
 
 from .state import GdbTraceError
 from .trace_model import TraceEvent, sample_trace_events
@@ -27,25 +28,37 @@ class CaptureResult:
     target_label: str
     events: list[TraceEvent]
     event_count: int
+    interrupted: bool = False
 
 
 class CaptureBackend:
     name = "unknown"
 
-    def capture(self, request: CaptureRequest) -> CaptureResult:
+    def capture(
+        self,
+        request: CaptureRequest,
+        event_sink: Callable[[list[dict[str, object]]], None] | None = None,
+    ) -> CaptureResult:
+        del event_sink
         raise NotImplementedError
 
 
 class StaticSampleCaptureBackend(CaptureBackend):
     name = "static"
 
-    def capture(self, request: CaptureRequest) -> CaptureResult:
+    def capture(
+        self,
+        request: CaptureRequest,
+        event_sink: Callable[[list[dict[str, object]]], None] | None = None,
+    ) -> CaptureResult:
+        del event_sink
         events = sample_trace_events(request.arch, include_registers=request.registers)
         return CaptureResult(
             backend=self.name,
             target_label="static",
             events=events,
             event_count=len(events),
+            interrupted=False,
         )
 
 
@@ -71,7 +84,12 @@ def _has_main_symbol(elf_path: Path) -> bool:
 class NativeGdbCaptureBackend(CaptureBackend):
     name = "gdb-native"
 
-    def capture(self, request: CaptureRequest) -> CaptureResult:
+    def capture(
+        self,
+        request: CaptureRequest,
+        event_sink: Callable[[list[dict[str, object]]], None] | None = None,
+    ) -> CaptureResult:
+        del event_sink
         if request.arch != "aarch64":
             raise GdbTraceError("gdb-native backend currently supports only aarch64")
 
@@ -124,6 +142,7 @@ class NativeGdbCaptureBackend(CaptureBackend):
                 target_label="local",
                 events=events,
                 event_count=len(events),
+                interrupted=False,
             )
         finally:
             output_path.unlink(missing_ok=True)
@@ -132,23 +151,30 @@ class NativeGdbCaptureBackend(CaptureBackend):
 class CurrentGdbSessionCaptureBackend(CaptureBackend):
     name = "gdb-current-session"
 
-    def capture(self, request: CaptureRequest) -> CaptureResult:
+    def capture(
+        self,
+        request: CaptureRequest,
+        event_sink: Callable[[list[dict[str, object]]], None] | None = None,
+    ) -> CaptureResult:
         try:
             from .gdb_agent import capture_current_session
         except ModuleNotFoundError as exc:
             raise GdbTraceError("gdb-current-session backend must run inside GDB") from exc
 
-        events = capture_current_session(
+        events, interrupted = capture_current_session(
             arch=request.arch,
             mode=request.mode,
             register_output=request.registers,
             max_steps=int(os.environ.get("GDBTRACE_GDB_MAX_STEPS", "4096")),
+            event_sink=event_sink,
         )
+        trace_events = [TraceEvent(**event) for event in events]
         return CaptureResult(
             backend=self.name,
             target_label="gdb-managed",
-            events=events,
-            event_count=len(events),
+            events=trace_events,
+            event_count=len(trace_events),
+            interrupted=interrupted,
         )
 
 
@@ -164,7 +190,12 @@ class QemuRemoteCaptureBackend(CaptureBackend):
                 f"{self.name} backend supports only {', '.join(self.supported_archs)}"
             )
 
-    def capture(self, request: CaptureRequest) -> CaptureResult:
+    def capture(
+        self,
+        request: CaptureRequest,
+        event_sink: Callable[[list[dict[str, object]]], None] | None = None,
+    ) -> CaptureResult:
+        del event_sink
         self._validate_arch(request)
         if not request.target:
             raise GdbTraceError(
@@ -235,6 +266,7 @@ class QemuRemoteCaptureBackend(CaptureBackend):
                 target_label=request.target,
                 events=events,
                 event_count=len(events),
+                interrupted=False,
             )
         finally:
             output_path.unlink(missing_ok=True)
