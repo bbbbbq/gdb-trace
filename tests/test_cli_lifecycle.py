@@ -88,10 +88,13 @@ class CliLifecycleTest(unittest.TestCase):
 
     def test_pause_start_save_stop_round_trip(self) -> None:
         self.configure_trace()
+        initial_event_count = len(sample_trace_events("aarch64"))
 
         started = self.run_cli("start")
         self.assertEqual(started.returncode, 0)
         self.assertIn("trace started", started.stdout)
+        initial_runtime = json.loads((self.state_dir / "runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(initial_runtime["event_count"], initial_event_count)
 
         paused = self.run_cli("pause")
         self.assertEqual(paused.returncode, 0)
@@ -100,6 +103,8 @@ class CliLifecycleTest(unittest.TestCase):
         resumed = self.run_cli("start")
         self.assertEqual(resumed.returncode, 0)
         self.assertIn("trace resumed", resumed.stdout)
+        resumed_runtime = json.loads((self.state_dir / "runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(resumed_runtime["event_count"], initial_event_count * 2)
 
         saved = self.run_cli("save")
         self.assertEqual(saved.returncode, 0)

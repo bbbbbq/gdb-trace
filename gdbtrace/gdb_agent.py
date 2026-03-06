@@ -398,10 +398,11 @@ def capture_current_session(
     if not interrupted and steps >= max_steps:
         raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
 
-    if event_sink is None:
-        _emit_stack_transition(events, stack, [])
-    else:
-        record_stack_transition(stack, [])
+    if not interrupted:
+        if event_sink is None:
+            _emit_stack_transition(events, stack, [])
+        else:
+            record_stack_transition(stack, [])
     return events, interrupted
 
 

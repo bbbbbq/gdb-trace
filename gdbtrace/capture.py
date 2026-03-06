@@ -366,8 +366,7 @@ class QemuRiscvRemoteCaptureBackend(QemuRemoteCaptureBackend):
     error_label = "qemu-riscv"
 
 
-def resolve_capture_backend() -> CaptureBackend:
-    backend_name = os.environ.get("GDBTRACE_CAPTURE_BACKEND", "static")
+def resolve_capture_backend_by_name(backend_name: str) -> CaptureBackend:
     if backend_name == "static":
         return StaticSampleCaptureBackend()
     if backend_name == "gdb-current-session":
@@ -381,3 +380,7 @@ def resolve_capture_backend() -> CaptureBackend:
     if backend_name == "gdb-qemu-riscv":
         return QemuRiscvRemoteCaptureBackend()
     raise GdbTraceError(f"unsupported capture backend: {backend_name}")
+
+
+def resolve_capture_backend() -> CaptureBackend:
+    return resolve_capture_backend_by_name(os.environ.get("GDBTRACE_CAPTURE_BACKEND", "static"))

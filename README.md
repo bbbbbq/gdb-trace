@@ -68,7 +68,7 @@
 
 生命周期命令语义：
 
-- `start`：当没有活动 trace 时，校验当前会话配置并启动新 trace；当存在已暂停的 trace 时，恢复该 trace。
+- `start`：当没有活动 trace 时，校验当前会话配置并启动新 trace；当存在已暂停的 trace 时，继续采集并将新事件追加到当前 trace。
 - `pause`：暂停当前运行中的 trace。
 - `save`：将当前 trace 的快照写回 `set-output` 设置的原始路径，不结束 trace。
 - `stop`：停止当前 trace，并将最终完整结果写回 `set-output` 设置的原始路径。
@@ -105,6 +105,7 @@ GDB 上下文语义：
 - 若存在缺失项，`start` 直接失败，并一次性列出全部缺失项。
 - 当 `start` 已经进入真实 GDB 单步采集后，`Ctrl+C` 不再丢弃已采集事件，而是将当前 trace 自动执行一次 `pause + save` 语义收敛，再保留给后续 `save` / `stop`。
 - `pause`、`save`、`stop` 不接受新的 trace 配置参数。
+- `start` 在 paused 状态下不只是恢复状态位，而是会重新进入采集后端，并把本次新增事件追加到既有 trace。
 - `save` 不接受新的输出路径，始终写回 `set-output` 设置的原始路径。
 - `set-mode both` 时，`save` / `stop` 会同时写回主 `both` 日志和派生的 `call` 日志。
 

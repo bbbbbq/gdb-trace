@@ -3,6 +3,7 @@
 ## 当前状态
 
 - 当前仓库已进入最小代码实现阶段。
+- 第二十九批代码已完成：已将 paused 状态下的 `start` 修复为真正的恢复采集并追加事件。
 - 第二十八批代码已完成：已将 GDB 中 `Ctrl+C` 中断进一步收敛为自动 `pause + save` 的语义。
 - 第二十七批代码已完成：已将 GDB 中 `Ctrl+C` 中断收敛为可保留 partial trace 的 paused/save/stop 语义。
 - 第二十六批代码已完成：已补强 QEMU 真实后端复杂样例与 userspace 场景的正确性对拍测试。
@@ -98,6 +99,8 @@
 - 已为 GDB 当前会话采集加入中断保护：`gdbtrace start` 过程中若被 `Ctrl+C` 打断，会保留已采集事件并自动写出 snapshot，再允许后续 `save` / `stop`。
 - 已为中断态 trace 增加 runtime spool 恢复逻辑，确保异常中止时可从临时事件流收敛回 `paused` 运行时状态。
 - 已将中断态 runtime 的恢复收敛点前移到自动 snapshot 落盘，确保 `Ctrl+C` 后即使不先手动 `save`，也已有一份可读日志。
+- 已修复 paused 状态下的 `start`：当前会重新进入后端采集，并把新增事件 append 到现有 runtime，而不是只修改 `status=running`。
+- 已在 GDB 当前会话采集中移除中断态的伪造收尾 `ret` 事件，避免恢复后出现错误的断裂调用边界。
 
 ## 当前验证状态
 
@@ -183,12 +186,14 @@
 - 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle.CliLifecycleTest.test_pause_recovers_interrupted_current_session_trace_and_autosaves_snapshot -v`，确认中断后可由 spool 正确恢复为 `paused` runtime 并自动落盘 snapshot。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_init.GdbInitInstallTest.test_gdbtrace_start_interrupt_autosaves_snapshot_and_allows_stop -v`，确认真实交互式 GDB 中 `gdbtrace start -> Ctrl+C -> gdbtrace stop` 流程可用，且中断后无需先手动 `save`。
 - 已在宿主机执行 `python3 -m compileall gdbtrace tests`，确认本轮 `Ctrl+C` 自动保存收敛改动涉及的代码与测试均可正常编译。
+- 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle.CliLifecycleTest.test_pause_start_save_stop_round_trip -v`，确认 paused 状态下再次 `start` 后 `event_count` 会继续增长，不再只是状态翻转。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_init.GdbInitInstallTest.test_gdbtrace_start_resume_interrupt_appends_trace_and_allows_stop -v`，确认真实交互式 GDB 中 `gdbtrace start -> Ctrl+C -> gdbtrace start -> Ctrl+C -> gdbtrace stop` 会继续追加 trace。
 
 ## 下一步
 
 1. 补跑更大范围的 QEMU 真实后端回归，确认 `aarch64`、ARM32 系和 RISC-V 系在复杂样例下保持一致。
 2. 在具备 `docker` 能力后，补跑容器 `ubuntu` 内的 GDB 安装与 `Ctrl+C` 自动 `pause + save` 语义验证。
-3. 继续收敛真实 GDB 采集链路中的通用部分，减少各 QEMU 后端的重复实现。
+3. 继续收敛真实 GDB 采集链路中的通用部分，减少各 QEMU 后端的重复实现，并补更多 resume 语义回归。
 
 ## 已知阻塞或风险
 

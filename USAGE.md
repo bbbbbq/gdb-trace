@@ -110,6 +110,7 @@ python3 -m gdbtrace stop
 
 - 远程连接由 GDB 原生命令负责，`gdbtrace` 不再维护目标地址配置。
 - `show-config` 只显示追踪相关配置，不显示远程连接状态。
+- 当当前 trace 处于 paused 状态时，再次执行 `start` 会重新进入采集并把新增事件追加到原 trace，而不是只修改状态位。
 
 ## 最小示例
 

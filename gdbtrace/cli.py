@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from .capture import CaptureRequest, resolve_capture_backend
+from .capture import CaptureRequest, resolve_capture_backend, resolve_capture_backend_by_name
 from .filters import apply_filters
 from .formatter import render_log
 from .state import (
@@ -201,6 +201,10 @@ def _runtime_payload(
     }
 
 
+def _trace_events_from_runtime(runtime: dict[str, object]) -> list[TraceEvent]:
+    return [TraceEvent(**event) for event in runtime.get("events", [])]
+
+
 def _append_spooled_events(spool_path: Path, events: list[dict[str, object]]) -> None:
     if not events:
         return
@@ -264,47 +268,33 @@ def _finalize_interrupted_runtime(paths: Paths, runtime: dict[str, object]) -> d
     return runtime
 
 
-def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
-    runtime = _active_runtime(paths)
-    if runtime.get("status") == "running":
-        raise GdbTraceError("trace is already running")
-    if runtime.get("status") == "paused":
-        if any((args.start_addr, args.stop_addr, args.filter_func, args.filter_range)):
-            raise GdbTraceError("cannot change trace arguments while resuming a paused trace")
-        runtime["status"] = "running"
-        save_runtime_state(paths, runtime)
-        print("trace resumed")
-        return 0
-
-    session = session_state(paths)
-    missing = _required_config(session)
-    if missing:
-        raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
-
-    backend = resolve_capture_backend()
-    started_at = datetime.now(timezone.utc).isoformat()
-    filters = _runtime_filters(args)
-    capture_request = CaptureRequest(
-        arch=session["arch"],
-        mode=session["mode"],
-        target=_capture_target_from_env(),
-        elf=session["elf"],
-        registers=_capture_registers_enabled(session),
-    )
+def _run_capture(
+    *,
+    backend_name: str,
+    capture_request: CaptureRequest,
+    session_config: dict[str, str],
+    filters: dict[str, str],
+    paths: Paths,
+    started_at: str,
+    existing_events: list[TraceEvent] | None = None,
+) -> tuple[dict[str, object], bool]:
+    backend = resolve_capture_backend_by_name(backend_name)
     spool_path = _capture_spool_path(paths)
     clear_file(spool_path)
     provisional_runtime = _runtime_payload(
-        session,
+        session_config,
         filters,
         status="running",
         started_at=started_at,
         target="gdb-managed" if backend.name == "gdb-current-session" else backend.name,
         capture_backend=backend.name,
+        events=existing_events,
     )
     if backend.name == "gdb-current-session":
         provisional_runtime["capture_in_progress"] = True
         provisional_runtime["capture_spool"] = str(spool_path)
     save_runtime_state(paths, provisional_runtime)
+
     try:
         capture_result = backend.capture(
             capture_request,
@@ -326,14 +316,15 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             filters,
             best_effort=False,
         )
+        combined_events = [*(existing_events or []), *filtered_events]
         new_runtime = _runtime_payload(
-            session,
+            session_config,
             filters,
             status="paused" if capture_result.interrupted else "running",
             started_at=started_at,
             target=capture_result.target_label,
             capture_backend=capture_result.backend,
-            events=filtered_events,
+            events=combined_events,
         )
         save_runtime_state(paths, new_runtime)
         clear_file(spool_path)
@@ -341,7 +332,63 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
         clear_file(spool_path)
         clear_file(paths.runtime_file)
         raise
-    if capture_result.interrupted:
+
+    return new_runtime, capture_result.interrupted
+
+
+def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
+    runtime = _active_runtime(paths)
+    if runtime.get("status") == "running":
+        raise GdbTraceError("trace is already running")
+    if runtime.get("status") == "paused":
+        if any((args.start_addr, args.stop_addr, args.filter_func, args.filter_range)):
+            raise GdbTraceError("cannot change trace arguments while resuming a paused trace")
+        runtime_config = runtime["config"]
+        resumed_runtime, interrupted = _run_capture(
+            backend_name=str(runtime["capture_backend"]),
+            capture_request=CaptureRequest(
+                arch=runtime_config["arch"],
+                mode=runtime_config["mode"],
+                target=_capture_target_from_env(),
+                elf=runtime_config["elf"],
+                registers=runtime_config.get("registers", "off") == "on" and runtime_config["mode"] != "call",
+            ),
+            session_config=runtime_config,
+            filters=runtime["filters"],
+            paths=paths,
+            started_at=str(runtime["started_at"]),
+            existing_events=_trace_events_from_runtime(runtime),
+        )
+        if interrupted:
+            _write_log_snapshot(resumed_runtime, "snapshot")
+            print(f"trace resumed, interrupted, and saved to {_snapshot_output_message(resumed_runtime)}")
+        else:
+            print("trace resumed")
+        return 0
+
+    session = session_state(paths)
+    missing = _required_config(session)
+    if missing:
+        raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
+
+    started_at = datetime.now(timezone.utc).isoformat()
+    filters = _runtime_filters(args)
+    capture_request = CaptureRequest(
+        arch=session["arch"],
+        mode=session["mode"],
+        target=_capture_target_from_env(),
+        elf=session["elf"],
+        registers=_capture_registers_enabled(session),
+    )
+    new_runtime, interrupted = _run_capture(
+        backend_name=resolve_capture_backend().name,
+        capture_request=capture_request,
+        session_config=session,
+        filters=filters,
+        paths=paths,
+        started_at=started_at,
+    )
+    if interrupted:
         _write_log_snapshot(new_runtime, "snapshot")
         print(f"trace interrupted, paused, and saved to {_snapshot_output_message(new_runtime)}")
     else:

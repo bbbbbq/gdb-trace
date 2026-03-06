@@ -322,7 +322,7 @@ class GdbInitInstallTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
             self.assertIn("current inferior is not stopped at a debuggable location", result.stderr)
 
-    def test_gdbtrace_start_interrupt_autosaves_snapshot_and_allows_stop(self) -> None:
+    def test_gdbtrace_start_resume_interrupt_appends_trace_and_allows_stop(self) -> None:
         with tempfile.TemporaryDirectory() as temp_home, tempfile.TemporaryDirectory() as temp_workdir:
             workdir = Path(temp_workdir)
             gdbinit_path = Path(temp_home) / ".gdbinit"
@@ -452,6 +452,18 @@ class GdbInitInstallTest(unittest.TestCase):
                 interrupted_content = output_path.read_text(encoding="utf-8")
                 self.assertIn("[trace snapshot]", interrupted_content)
                 self.assertIn("call main", interrupted_content)
+                first_snapshot_instructions = interrupted_content.count("0x")
+
+                write_input("gdbtrace start\n")
+                time.sleep(1.0)
+                os.write(master_fd, b"\x03")
+                resumed_output = read_command_output(
+                    "trace resumed, interrupted, and saved to",
+                    timeout=20.0,
+                )
+                resumed_snapshot_content = output_path.read_text(encoding="utf-8")
+                self.assertIn("[trace snapshot]", resumed_snapshot_content)
+                self.assertGreater(resumed_snapshot_content.count("0x"), first_snapshot_instructions)
 
                 write_input("gdbtrace stop\n")
                 stop_output = read_command_output("trace stopped and saved to", timeout=20.0)
@@ -465,9 +477,10 @@ class GdbInitInstallTest(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=5)
 
-            combined_output = interrupted_output + stop_output
+            combined_output = interrupted_output + resumed_output + stop_output
             self.assertEqual(process.returncode, 0, msg=combined_output)
             self.assertIn("trace interrupted, paused, and saved to", combined_output)
+            self.assertIn("trace resumed, interrupted, and saved to", combined_output)
             self.assertIn("trace stopped and saved to", combined_output)
             self.assertTrue(output_path.exists())
             content = output_path.read_text(encoding="utf-8")
