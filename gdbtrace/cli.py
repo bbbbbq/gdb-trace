@@ -110,7 +110,7 @@ def cmd_set_registers(args: argparse.Namespace, paths: Paths) -> int:
 
 def cmd_show_config(_: argparse.Namespace, paths: Paths) -> int:
     payload = session_state(paths)
-    for key in ("arch", "elf", "output", "mode", "registers"):
+    for key in ("target", "arch", "elf", "output", "mode", "registers"):
         print(f"{key}={payload.get(key, '<unset>')}")
     return 0
 
@@ -147,9 +147,7 @@ def _required_config(session: dict[str, str]) -> list[str]:
     return missing
 
 
-def _resolve_target(paths: Paths, explicit_target: str | None) -> str:
-    if explicit_target:
-        return validate_target(explicit_target)
+def _resolve_target(paths: Paths) -> str:
     session = session_state(paths)
     if session.get("target"):
         return session["target"]
@@ -196,7 +194,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
     if runtime.get("status") == "running":
         raise GdbTraceError("trace is already running")
     if runtime.get("status") == "paused":
-        if any((args.target, args.start_addr, args.stop_addr, args.filter_func, args.filter_range)):
+        if any((args.start_addr, args.stop_addr, args.filter_func, args.filter_range)):
             raise GdbTraceError("cannot change trace arguments while resuming a paused trace")
         runtime["status"] = "running"
         save_runtime_state(paths, runtime)
@@ -208,7 +206,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
     if missing:
         raise GdbTraceError(f"missing required trace config: {', '.join(missing)}")
 
-    target = _resolve_target(paths, args.target)
+    target = _resolve_target(paths)
     backend = resolve_capture_backend()
     capture_result = backend.capture(
         CaptureRequest(
@@ -231,6 +229,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
         "started_at": datetime.now(timezone.utc).isoformat(),
         "target": target,
         "config": {
+            "target": target,
             "arch": session["arch"],
             "elf": session["elf"],
             "output": session["output"],
@@ -310,7 +309,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_command("clear-registers", cmd_clear_registers)
 
     start_parser = add_command("start", cmd_start)
-    start_parser.add_argument("--target")
     start_parser.add_argument("--start", dest="start_addr")
     start_parser.add_argument("--stop", dest="stop_addr")
     start_parser.add_argument("--filter-func")

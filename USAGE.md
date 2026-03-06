@@ -109,11 +109,16 @@ python3 -m gdbtrace clear-registers
 3. 生命周期命令
 
 ```bash
-python3 -m gdbtrace start [--target <ip:port>] [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]
+python3 -m gdbtrace start [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]
 python3 -m gdbtrace pause
 python3 -m gdbtrace save
 python3 -m gdbtrace stop
 ```
+
+说明：
+
+- 远程目标地址必须先通过 `set-target` 或 `set-default-target` 配置。
+- `show-config` 现在会显示当前会话 `target`，`show-target` 继续用于查看当前值、默认值和实际生效值。
 
 ## 最小示例
 

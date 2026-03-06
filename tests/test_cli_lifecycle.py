@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -48,11 +49,40 @@ class CliLifecycleTest(unittest.TestCase):
         self.assertIn("error: missing required trace config: arch, elf, output, mode", result.stdout)
 
     def test_start_reports_remaining_missing_required_config(self) -> None:
+        self.assertEqual(self.run_cli("set-target", "127.0.0.1:1234").returncode, 0)
         self.assertEqual(self.run_cli("set-arch", "thumb").returncode, 0)
         self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
-        result = self.run_cli("start", "--target", "127.0.0.1:1234")
+        result = self.run_cli("start")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error: missing required trace config: elf, mode", result.stdout)
+
+    def test_start_requires_target_to_be_preconfigured(self) -> None:
+        self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
+        self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
+        self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
+        self.assertEqual(self.run_cli("set-mode", "both").returncode, 0)
+        result = self.run_cli("start")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("error: remote target is not configured", result.stdout)
+
+    def test_start_uses_default_target_when_session_target_is_unset(self) -> None:
+        self.assertEqual(self.run_cli("set-default-target", "127.0.0.1:4321").returncode, 0)
+        self.assertEqual(self.run_cli("set-arch", "aarch64").returncode, 0)
+        self.assertEqual(self.run_cli("set-elf", "demo.elf").returncode, 0)
+        self.assertEqual(self.run_cli("set-output", str(self.output_path)).returncode, 0)
+        self.assertEqual(self.run_cli("set-mode", "both").returncode, 0)
+        started = self.run_cli("start")
+        self.assertEqual(started.returncode, 0)
+        self.assertIn("trace started", started.stdout)
+        runtime_payload = json.loads((self.state_dir / "runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(runtime_payload["target"], "127.0.0.1:4321")
+        self.assertEqual(runtime_payload["config"]["target"], "127.0.0.1:4321")
+        self.assertEqual(self.run_cli("stop").returncode, 0)
+
+    def test_start_rejects_removed_target_argument(self) -> None:
+        result = self.run_cli("start", "--target", "127.0.0.1:1234")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unrecognized arguments: --target 127.0.0.1:1234", result.stderr)
 
     def test_pause_start_save_stop_round_trip(self) -> None:
         self.configure_trace()
@@ -94,7 +124,7 @@ class CliLifecycleTest(unittest.TestCase):
         self.configure_trace()
         self.assertEqual(self.run_cli("start").returncode, 0)
         self.assertEqual(self.run_cli("pause").returncode, 0)
-        result = self.run_cli("start", "--target", "10.0.0.1:4321")
+        result = self.run_cli("start", "--start", "0x400580")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error: cannot change trace arguments while resuming a paused trace", result.stdout)
 

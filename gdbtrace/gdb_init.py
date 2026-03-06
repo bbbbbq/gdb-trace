@@ -28,7 +28,7 @@ CLI_COMMAND_DOCS = {
     "clear-output": "Clear the current session output path.",
     "clear-mode": "Clear the current session trace mode.",
     "clear-registers": "Clear the current session register logging mode.",
-    "start": "Start or resume trace capture. Usage: gdbtrace start [--target <ip:port>] [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]",
+    "start": "Start or resume trace capture. Usage: gdbtrace start [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]",
     "pause": "Pause the current trace.",
     "save": "Write the current trace snapshot to the configured output path.",
     "stop": "Stop the current trace and save the final result.",

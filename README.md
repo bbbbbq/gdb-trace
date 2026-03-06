@@ -56,7 +56,7 @@
 - `gdbtrace clear-output`
 - `gdbtrace clear-mode`
 - `gdbtrace clear-registers`
-- `gdbtrace start [--target <host:port>] [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]`
+- `gdbtrace start [--start <addr|symbol>] [--stop <addr|symbol>] [--filter-func <pattern>] [--filter-range <start:end>]`
 - `gdbtrace pause`
 - `gdbtrace save`
 - `gdbtrace stop`
@@ -68,7 +68,7 @@
 - `set-output`：设置当前会话的日志输出路径，输出文件约定为 `.log`。
 - `set-mode`：设置当前会话的追踪模式，取值为 `inst`、`call`、`both`。
 - `set-registers`：设置是否在指令行后追加通用寄存器输出，取值为 `on` 或 `off`，默认视为 `off`。
-- `show-config`：显示当前会话内 `arch`、`elf`、`output`、`mode`、`registers` 的当前值。
+- `show-config`：显示当前会话内 `target`、`arch`、`elf`、`output`、`mode`、`registers` 的当前值。
 - `clear-arch`、`clear-elf`、`clear-output`、`clear-mode`、`clear-registers`：清除当前会话中的对应配置项。
 
 生命周期命令语义：
@@ -104,14 +104,13 @@
 
 连接地址解析规则：
 
-1. 若 `start` 显式传入 `--target <ip:port>`，优先使用显式参数。
-2. 否则若当前会话已通过 `set-target` 设置地址，使用当前会话地址。
-3. 否则若已通过 `set-default-target` 设置全局默认地址，使用全局默认地址。
-4. 否则报错，提示未配置远程目标地址。
+1. 若当前会话已通过 `set-target` 设置地址，使用当前会话地址。
+2. 否则若已通过 `set-default-target` 设置全局默认地址，使用全局默认地址。
+3. 否则报错，提示未配置远程目标地址。
 
 `start` 校验规则：
 
-- `start` 不接受 `--arch`、`--elf`、`--output`、`--mode`。
+- `start` 不接受 `--target`、`--arch`、`--elf`、`--output`、`--mode`。
 - `start` 执行前必须检查当前会话是否已配置 `arch`、`elf`、`output`、`mode`。
 - 若存在缺失项，`start` 直接失败，并一次性列出全部缺失项。
 - `pause`、`save`、`stop` 不接受新的 trace 配置参数。
@@ -251,8 +250,8 @@ ret main
 - `call` 模式：确认仅输出 `call/ret` 行，且每层嵌套固定缩进 4 个空格。
 - `both` 模式：确认 `call/ret` 与指令行组合输出，且两者都遵循统一的 4 个空格层级缩进。
 - `both` 模式：确认会生成两份 `.log` 文件，其中主日志包含 `call/ret + 指令`，派生 `call` 日志仅包含函数调用序列。
-- `set-arch`、`set-elf`、`set-output`、`set-mode` 后：`show-config` 能正确显示当前值。
-- 执行 `clear-arch`、`clear-elf`、`clear-output`、`clear-mode` 后：`show-config` 不再显示对应值。
+- `set-target`、`set-arch`、`set-elf`、`set-output`、`set-mode` 后：`show-config` 能正确显示当前值。
+- 执行 `clear-target`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode` 后：`show-config` 不再显示对应值。
 - 未配置任何项时执行 `start`：一次性报出缺失的 `arch`、`elf`、`output`、`mode`。
 - 仅配置部分项时执行 `start`：只报出剩余缺失项。
 - 全部配置完成后执行 `start`：可正常启动 trace。

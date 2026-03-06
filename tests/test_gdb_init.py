@@ -72,6 +72,17 @@ class GdbInitInstallTest(unittest.TestCase):
         for command_name in EXPECTED_USER_COMMANDS:
             self.assertIn(command_name, result.stdout)
 
+        help_result = self.run_gdb(
+            "-q",
+            "-batch",
+            "-ex",
+            f"python import runpy; runpy.run_path({str(INIT_SCRIPT)!r}, run_name='__main__')",
+            "-ex",
+            "help gdbtrace start",
+        )
+        self.assertEqual(help_result.returncode, 0, msg=help_result.stderr or help_result.stdout)
+        self.assertNotIn("--target", help_result.stdout)
+
     def test_gdbinit_autoloads_commands_and_runs_minimal_trace(self) -> None:
         with tempfile.TemporaryDirectory() as temp_home, tempfile.TemporaryDirectory() as temp_workdir:
             workdir = Path(temp_workdir)
@@ -120,6 +131,7 @@ class GdbInitInstallTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
             self.assertIn("Set the current session target. Usage: gdbtrace set-target <ip:port>", result.stdout)
+            self.assertIn("target=127.0.0.1:1234", result.stdout)
             self.assertIn("arch=aarch64", result.stdout)
             self.assertIn("elf=demo.elf", result.stdout)
             self.assertIn("output=trace.log", result.stdout)
@@ -132,6 +144,41 @@ class GdbInitInstallTest(unittest.TestCase):
             self.assertNotIn("Undefined command", result.stdout)
             self.assertTrue((workdir / "trace.log").exists())
             self.assertTrue((workdir / "trace.call.log").exists())
+
+    def test_gdbtrace_start_rejects_removed_target_argument(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_home, tempfile.TemporaryDirectory() as temp_workdir:
+            workdir = Path(temp_workdir)
+            gdbinit_path = Path(temp_home) / ".gdbinit"
+            gdbinit_path.write_text(
+                "\n".join(
+                    [
+                        "python",
+                        "import runpy",
+                        f"runpy.run_path({str(INIT_SCRIPT)!r}, run_name='__main__')",
+                        "end",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            env.pop("PYTHONPATH", None)
+            env["GDBTRACE_GLOBAL_CONFIG"] = str(workdir / "global.json")
+            env["GDBTRACE_SESSION_FILE"] = str(workdir / "session.json")
+            env["GDBTRACE_RUNTIME_FILE"] = str(workdir / "runtime.json")
+            env["GDBTRACE_CAPTURE_BACKEND"] = "static"
+
+            result = self.run_gdb(
+                "-q",
+                input_text="gdbtrace start --target 127.0.0.1:1234\nquit\n",
+                env=env,
+                cwd=workdir,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            self.assertIn("invalid arguments for start", result.stderr)
 
     def test_gdbtrace_start_can_infer_elf_from_current_gdb_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_home, tempfile.TemporaryDirectory() as temp_workdir:
