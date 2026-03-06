@@ -4,6 +4,7 @@
 
 - 当前仓库已进入最小代码实现阶段。
 - 第十七批代码已完成：已收敛寄存器输出 review 问题，包括采样时序、过滤重建保留和 `call` 模式采样收敛。
+- 第十八批代码已完成：已补齐原生环境下的 GDB init 自动化与交互式安装验证。
 - 已完成核心需求文档整理，主文档为 [README.md](/Users/caojunze424/code/gdb_trace/README.md)。
 - 已建立协作约束文档 [AGENTS.md](/Users/caojunze424/code/gdb_trace/AGENTS.md)。
 - 已完成第一批代码：CLI 配置状态管理。
@@ -72,6 +73,7 @@
 - 已修复 `call` 模式下的无效寄存器采样；当前仅 `inst` / `both` 模式会触发寄存器采集，`call` 日志头也不再显示误导性的寄存器标记。
 - 已新增 `gdbtrace/gdb_init.py`，可供 GDB 通过 `runpy.run_path(...)` 加载，并注册 `gdbtrace-run` 用户命令。
 - 已完成当前用户 `~/.gdbinit` 的最小安装接入，使本机 GDB 启动后自动加载 `gdbtrace` 初始化脚本。
+- 已补充 `tests/test_gdb_init.py`，覆盖 `gdb_init.py` 的重复加载、命令注册，以及用户级 `~/.gdbinit` 自动加载场景。
 
 ## 当前验证状态
 
@@ -125,6 +127,8 @@
 - 已在 Docker 容器 `ubuntu` 中于 2026-03-06 执行 `python3 -m unittest discover -s tests -v`，当前 41 项自动化测试全部通过。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_init -v`，确认 GDB 初始化脚本可重复加载，且成功注册 `gdbtrace-run`。
 - 已在宿主机执行 `gdb -q -batch -ex "help user-defined"`，确认普通启动 GDB 后已自动出现 `gdbtrace-run`。
+- 已在宿主机执行扩展后的 `python3 -m unittest tests.test_gdb_init -v`，当前 2 项 `gdb_init` 自动化测试全部通过，覆盖 `.gdbinit` 自动加载和交互式会话帮助查询。
+- 已在宿主机执行真实交互式 GDB 会话，并在提示符下完成 `help gdbtrace-run -> quit` 验证，确认当前原生环境安装可直接识别该命令。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent -v`，确认寄存器采样发生在 `stepi` 之后，并覆盖 `_step_until_exit()` 路径。
 - 已在宿主机执行 `python3 -m unittest tests.test_trace_filters -v`，确认过滤重建深度后仍保留寄存器载荷并正确输出 `regs:` 行。
 - 已在宿主机执行 `python3 -m unittest tests.test_log_formatting -v`，确认 `call` 模式在 `set-registers on` 下不会采样或渲染寄存器内容。
