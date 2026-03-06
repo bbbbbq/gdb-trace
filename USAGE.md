@@ -417,6 +417,11 @@ gdbtrace stop
 gdbtrace save
 ```
 
+补充说明：
+
+- 默认已经没有内建最大步数限制。
+- `GDBTRACE_GDB_MAX_STEPS` 现在仅在你显式设置且值大于 `0` 时，才作为可选保险丝生效。
+
 ### 5. 为什么 `both` 会生成两份日志
 
 这是当前设计要求：

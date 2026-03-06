@@ -15,6 +15,15 @@ BACKTRACE_RE = re.compile(r"^#\d+\s+(?:0x[0-9a-fA-Fx]+\s+in\s+)?([^\s(]+)")
 CALL_RE = re.compile(r"^([a-z.]+)\s+([^\s]+)(?:\s+<([^>]+)>)?")
 
 
+def _parse_max_steps(value: str | None) -> int | None:
+    if value is None or value == "":
+        return None
+    parsed = int(value)
+    if parsed <= 0:
+        return None
+    return parsed
+
+
 def _normalized_frame_name(name: str) -> str:
     if name.endswith("@plt"):
         return name[:-4]
@@ -243,14 +252,14 @@ def _emit_stack_transition(
 
 
 def _step_until_exit(
-    max_steps: int,
+    max_steps: int | None,
     events: list[dict[str, object]],
     arch: str,
     register_output: bool,
     event_sink: Callable[[list[dict[str, object]]], None] | None = None,
 ) -> int:
     steps = 0
-    while steps < max_steps:
+    while max_steps is None or steps < max_steps:
         try:
             pc, instruction = _current_instruction()
         except gdb.error as exc:
@@ -288,7 +297,7 @@ def capture_current_session(
     arch: str,
     mode: str,
     register_output: bool,
-    max_steps: int,
+    max_steps: int | None,
     event_sink: Callable[[list[dict[str, object]]], None] | None = None,
 ) -> tuple[list[dict[str, object]], bool]:
     gdb.execute("set pagination off")
@@ -345,7 +354,7 @@ def capture_current_session(
             if _is_user_interrupt(exc):
                 return events, True
             raise
-        if steps >= max_steps:
+        if max_steps is not None and steps >= max_steps:
             raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
         return events, False
 
@@ -361,7 +370,7 @@ def capture_current_session(
     steps = 0
     interrupted = False
     try:
-        while steps < max_steps:
+        while max_steps is None or steps < max_steps:
             current_stack = list(stack)
             if not current_stack:
                 break
@@ -395,7 +404,7 @@ def capture_current_session(
         else:
             raise
 
-    if not interrupted and steps >= max_steps:
+    if not interrupted and max_steps is not None and steps >= max_steps:
         raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
 
     if not interrupted:
@@ -409,7 +418,7 @@ def capture_current_session(
 def run() -> None:
     elf = os.environ["GDBTRACE_GDB_ELF"]
     output_path = Path(os.environ["GDBTRACE_GDB_OUTPUT"])
-    max_steps = int(os.environ.get("GDBTRACE_GDB_MAX_STEPS", "4096"))
+    max_steps = _parse_max_steps(os.environ.get("GDBTRACE_GDB_MAX_STEPS"))
     transport = os.environ.get("GDBTRACE_GDB_TRANSPORT", "native")
     symbol_mode = os.environ.get("GDBTRACE_GDB_SYMBOL_MODE", "main")
     arch = os.environ.get("GDBTRACE_GDB_ARCH", "")
@@ -441,7 +450,7 @@ def run() -> None:
     events: list[dict[str, object]] = []
     if symbol_mode == "entry":
         steps = _step_until_exit(max_steps, events, arch, register_output)
-        if steps >= max_steps:
+        if max_steps is not None and steps >= max_steps:
             raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
         output_path.write_text(json.dumps(events, indent=2), encoding="utf-8")
         return
@@ -453,7 +462,7 @@ def run() -> None:
     _emit_call_events(events, stack)
 
     steps = 0
-    while steps < max_steps:
+    while max_steps is None or steps < max_steps:
         current_stack = list(stack)
         if not current_stack:
             break
@@ -479,7 +488,7 @@ def run() -> None:
         _emit_stack_transition(events, current_stack, next_stack)
         stack = next_stack
 
-    if steps >= max_steps:
+    if max_steps is not None and steps >= max_steps:
         raise RuntimeError(f"gdb stepping exceeded limit: {max_steps}")
 
     _emit_stack_transition(events, stack, [])

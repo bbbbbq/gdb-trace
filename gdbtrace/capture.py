@@ -62,6 +62,15 @@ class StaticSampleCaptureBackend(CaptureBackend):
         )
 
 
+def _parse_max_steps(value: str | None) -> int | None:
+    if value is None or value == "":
+        return None
+    parsed = int(value)
+    if parsed <= 0:
+        return None
+    return parsed
+
+
 def _has_main_symbol(elf_path: Path) -> bool:
     for command in (["readelf", "-Ws", str(elf_path)], ["nm", "-a", str(elf_path)]):
         try:
@@ -115,7 +124,6 @@ class NativeGdbCaptureBackend(CaptureBackend):
         env["GDBTRACE_GDB_ARCH"] = request.arch
         env["GDBTRACE_GDB_SYMBOL_MODE"] = "main" if has_main_symbol else "entry"
         env["GDBTRACE_GDB_REGISTERS"] = "on" if request.registers else "off"
-        env.setdefault("GDBTRACE_GDB_MAX_STEPS", "4096")
 
         command = [
             "gdb",
@@ -165,7 +173,7 @@ class CurrentGdbSessionCaptureBackend(CaptureBackend):
             arch=request.arch,
             mode=request.mode,
             register_output=request.registers,
-            max_steps=int(os.environ.get("GDBTRACE_GDB_MAX_STEPS", "4096")),
+            max_steps=_parse_max_steps(os.environ.get("GDBTRACE_GDB_MAX_STEPS")),
             event_sink=event_sink,
         )
         trace_events = [TraceEvent(**event) for event in events]
@@ -245,8 +253,6 @@ class QemuRemoteCaptureBackend(CaptureBackend):
             env["GDBTRACE_GDB_ARCH"] = request.arch
             env["GDBTRACE_GDB_SYMBOL_MODE"] = "main" if has_main_symbol else "entry"
             env["GDBTRACE_GDB_REGISTERS"] = "on" if request.registers else "off"
-            env.setdefault("GDBTRACE_GDB_MAX_STEPS", "8192")
-
             command = [
                 "gdb-multiarch",
                 "-q",

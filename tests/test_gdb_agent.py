@@ -103,6 +103,56 @@ class GdbAgentTest(unittest.TestCase):
             events,
         )
 
+    def test_parse_max_steps_defaults_to_unlimited(self) -> None:
+        fake_gdb = types.SimpleNamespace(error=_FakeGdbError, execute=lambda *args, **kwargs: "")
+        module = self.load_module(fake_gdb)
+
+        self.assertIsNone(module._parse_max_steps(None))
+        self.assertIsNone(module._parse_max_steps(""))
+        self.assertIsNone(module._parse_max_steps("0"))
+        self.assertIsNone(module._parse_max_steps("-1"))
+        self.assertEqual(32, module._parse_max_steps("32"))
+
+    def test_step_until_exit_accepts_unlimited_steps(self) -> None:
+        call_order: list[str] = []
+        fake_gdb = types.SimpleNamespace(error=_FakeGdbError)
+
+        def execute(command: str, to_string: bool = False) -> str:
+            del to_string
+            call_order.append(command)
+            return ""
+
+        fake_gdb.execute = execute
+        module = self.load_module(fake_gdb)
+
+        instructions = iter(
+            [
+                ("0x400580", "mov x29, sp"),
+                ("0x400584", "bl func_a"),
+            ]
+        )
+
+        def current_instruction() -> tuple[str, str]:
+            try:
+                return next(instructions)
+            except StopIteration as exc:
+                raise fake_gdb.error("No registers") from exc
+
+        def current_registers(_: str, enabled: bool) -> dict[str, str]:
+            self.assertTrue(enabled)
+            call_order.append("registers")
+            return {"x29": "0x1"}
+
+        module._current_instruction = current_instruction
+        module._current_registers = current_registers
+
+        events: list[dict[str, object]] = []
+        steps = module._step_until_exit(None, events, "aarch64", True)
+
+        self.assertEqual(2, steps)
+        self.assertEqual(["stepi", "registers", "stepi", "registers"], call_order)
+        self.assertEqual(2, len(events))
+
 
 if __name__ == "__main__":
     unittest.main()
