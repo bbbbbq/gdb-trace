@@ -180,8 +180,10 @@ def _runtime_payload(
     started_at: str,
     target: str,
     capture_backend: str,
+    raw_events: list[TraceEvent] | None = None,
     events: list[TraceEvent] | None = None,
 ) -> dict[str, object]:
+    payload_raw_events = raw_events if raw_events is not None else (events or [])
     payload_events = events or []
     return {
         "status": status,
@@ -197,12 +199,19 @@ def _runtime_payload(
         "capture_backend": capture_backend,
         "event_count": len(payload_events),
         "filters": filters,
+        "raw_events": [event.__dict__ for event in payload_raw_events],
         "events": [event.__dict__ for event in payload_events],
     }
 
 
-def _trace_events_from_runtime(runtime: dict[str, object]) -> list[TraceEvent]:
-    return [TraceEvent(**event) for event in runtime.get("events", [])]
+def _trace_events_from_runtime(runtime: dict[str, object], key: str = "events") -> list[TraceEvent]:
+    return [TraceEvent(**event) for event in runtime.get(key, [])]
+
+
+def _raw_trace_events_from_runtime(runtime: dict[str, object]) -> list[TraceEvent]:
+    if "raw_events" in runtime:
+        return _trace_events_from_runtime(runtime, key="raw_events")
+    return _trace_events_from_runtime(runtime)
 
 
 def _append_spooled_events(spool_path: Path, events: list[dict[str, object]]) -> None:
@@ -251,12 +260,13 @@ def _filtered_runtime_events(
 def _finalize_interrupted_runtime(paths: Paths, runtime: dict[str, object]) -> dict[str, object]:
     spool_text = str(runtime.get("capture_spool", ""))
     spool_path = Path(spool_text) if spool_text else _capture_spool_path(paths)
-    raw_events = _load_spooled_events(spool_path)
+    combined_raw_events = [*_raw_trace_events_from_runtime(runtime), *_load_spooled_events(spool_path)]
     filtered_events = _filtered_runtime_events(
-        raw_events,
+        combined_raw_events,
         runtime.get("filters", {}),
         best_effort=True,
     )
+    runtime["raw_events"] = [event.__dict__ for event in combined_raw_events]
     runtime["events"] = [event.__dict__ for event in filtered_events]
     runtime["event_count"] = len(filtered_events)
     runtime["status"] = "paused"
@@ -276,11 +286,13 @@ def _run_capture(
     filters: dict[str, str],
     paths: Paths,
     started_at: str,
-    existing_events: list[TraceEvent] | None = None,
+    existing_runtime: dict[str, object] | None = None,
 ) -> tuple[dict[str, object], bool]:
     backend = resolve_capture_backend_by_name(backend_name)
     spool_path = _capture_spool_path(paths)
     clear_file(spool_path)
+    existing_raw_events = _raw_trace_events_from_runtime(existing_runtime or {})
+    existing_filtered_events = _trace_events_from_runtime(existing_runtime or {})
     provisional_runtime = _runtime_payload(
         session_config,
         filters,
@@ -288,7 +300,8 @@ def _run_capture(
         started_at=started_at,
         target="gdb-managed" if backend.name == "gdb-current-session" else backend.name,
         capture_backend=backend.name,
-        events=existing_events,
+        raw_events=existing_raw_events,
+        events=existing_filtered_events,
     )
     if backend.name == "gdb-current-session":
         provisional_runtime["capture_in_progress"] = True
@@ -307,16 +320,19 @@ def _run_capture(
     except BaseException as exc:
         if not (backend.name == "gdb-current-session" and _is_capture_interrupt(exc)):
             clear_file(spool_path)
-            clear_file(paths.runtime_file)
+            if existing_runtime is None:
+                clear_file(paths.runtime_file)
+            else:
+                save_runtime_state(paths, existing_runtime)
         raise
 
     try:
+        combined_raw_events = [*existing_raw_events, *capture_result.events]
         filtered_events = _filtered_runtime_events(
-            capture_result.events,
+            combined_raw_events,
             filters,
             best_effort=False,
         )
-        combined_events = [*(existing_events or []), *filtered_events]
         new_runtime = _runtime_payload(
             session_config,
             filters,
@@ -324,13 +340,17 @@ def _run_capture(
             started_at=started_at,
             target=capture_result.target_label,
             capture_backend=capture_result.backend,
-            events=combined_events,
+            raw_events=combined_raw_events,
+            events=filtered_events,
         )
         save_runtime_state(paths, new_runtime)
         clear_file(spool_path)
     except BaseException:
         clear_file(spool_path)
-        clear_file(paths.runtime_file)
+        if existing_runtime is None:
+            clear_file(paths.runtime_file)
+        else:
+            save_runtime_state(paths, existing_runtime)
         raise
 
     return new_runtime, capture_result.interrupted
@@ -357,7 +377,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             filters=runtime["filters"],
             paths=paths,
             started_at=str(runtime["started_at"]),
-            existing_events=_trace_events_from_runtime(runtime),
+            existing_runtime=runtime,
         )
         if interrupted:
             _write_log_snapshot(resumed_runtime, "snapshot")

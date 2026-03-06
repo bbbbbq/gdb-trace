@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -7,8 +8,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from gdbtrace.trace_model import sample_trace_events
+from gdbtrace import cli
+from gdbtrace.capture import CaptureResult
+from gdbtrace.filters import apply_filters
+from gdbtrace.state import Paths
+from gdbtrace.trace_model import TraceEvent, sample_trace_events
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -177,6 +183,159 @@ class CliLifecycleTest(unittest.TestCase):
         self.assertTrue(self.output_path.exists())
         self.assertIn("[trace snapshot]", self.output_path.read_text(encoding="utf-8"))
         self.assertTrue(self.call_output_path.exists())
+
+    def test_resume_failure_preserves_existing_runtime(self) -> None:
+        raw_events = sample_trace_events("aarch64")
+        runtime_payload = {
+            "status": "paused",
+            "started_at": "2026-03-06T00:00:00+00:00",
+            "target": "static",
+            "config": {
+                "arch": "aarch64",
+                "elf": "demo.elf",
+                "output": str(self.output_path),
+                "mode": "both",
+                "registers": "off",
+            },
+            "capture_backend": "static",
+            "event_count": len(raw_events),
+            "filters": {
+                "start": "",
+                "stop": "",
+                "filter_func": "",
+                "filter_range": "",
+            },
+            "raw_events": [event.__dict__ for event in raw_events],
+            "events": [event.__dict__ for event in raw_events],
+        }
+        runtime_path = self.state_dir / "runtime.json"
+        runtime_path.write_text(json.dumps(runtime_payload), encoding="utf-8")
+        paths = Paths(
+            session_file=self.state_dir / "session.json",
+            global_config_file=self.state_dir / "global.json",
+            runtime_file=runtime_path,
+        )
+
+        class FailingBackend:
+            name = "static"
+
+            def capture(self, request, event_sink=None):
+                del request, event_sink
+                raise RuntimeError("backend exploded during resume")
+
+        args = argparse.Namespace(start_addr=None, stop_addr=None, filter_func=None, filter_range=None)
+        with mock.patch("gdbtrace.cli.resolve_capture_backend_by_name", return_value=FailingBackend()):
+            with self.assertRaisesRegex(RuntimeError, "backend exploded during resume"):
+                cli.cmd_start(args, paths)
+
+        restored_runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+        self.assertEqual(runtime_payload, restored_runtime)
+
+    def test_resume_reapplies_filters_over_full_raw_trace(self) -> None:
+        raw_events = sample_trace_events("aarch64")
+        filtered_events = apply_filters(raw_events, filter_func="func_b")
+        runtime_payload = {
+            "status": "paused",
+            "started_at": "2026-03-06T00:00:00+00:00",
+            "target": "static",
+            "config": {
+                "arch": "aarch64",
+                "elf": "demo.elf",
+                "output": str(self.output_path),
+                "mode": "both",
+                "registers": "off",
+            },
+            "capture_backend": "static",
+            "event_count": len(filtered_events),
+            "filters": {
+                "start": "",
+                "stop": "",
+                "filter_func": "func_b",
+                "filter_range": "",
+            },
+            "raw_events": [event.__dict__ for event in raw_events],
+            "events": [event.__dict__ for event in filtered_events],
+        }
+        runtime_path = self.state_dir / "runtime.json"
+        runtime_path.write_text(json.dumps(runtime_payload), encoding="utf-8")
+        paths = Paths(
+            session_file=self.state_dir / "session.json",
+            global_config_file=self.state_dir / "global.json",
+            runtime_file=runtime_path,
+        )
+        resumed_segment = [
+            TraceEvent("call", 0, "resume_only"),
+            TraceEvent("inst", 1, "resume_only", "0x500000", "nop"),
+            TraceEvent("ret", 0, "resume_only"),
+        ]
+
+        class ReturningBackend:
+            name = "static"
+
+            def capture(self, request, event_sink=None):
+                del request, event_sink
+                return CaptureResult(
+                    backend="static",
+                    target_label="static",
+                    events=resumed_segment,
+                    event_count=len(resumed_segment),
+                    interrupted=False,
+                )
+
+        args = argparse.Namespace(start_addr=None, stop_addr=None, filter_func=None, filter_range=None)
+        with mock.patch("gdbtrace.cli.resolve_capture_backend_by_name", return_value=ReturningBackend()):
+            result = cli.cmd_start(args, paths)
+
+        self.assertEqual(0, result)
+        resumed_runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+        self.assertEqual("running", resumed_runtime["status"])
+        self.assertEqual(len(raw_events) + len(resumed_segment), len(resumed_runtime["raw_events"]))
+        self.assertEqual([event.__dict__ for event in filtered_events], resumed_runtime["events"])
+
+    def test_save_after_interrupted_resume_keeps_prior_filtered_trace(self) -> None:
+        raw_events = sample_trace_events("aarch64")
+        filtered_events = apply_filters(raw_events, filter_func="func_b")
+        spool_path = self.state_dir / "runtime.json.events.jsonl"
+        runtime_payload = {
+            "status": "running",
+            "started_at": "2026-03-06T00:00:00+00:00",
+            "target": "gdb-managed",
+            "config": {
+                "arch": "aarch64",
+                "elf": "demo.elf",
+                "output": str(self.output_path),
+                "mode": "both",
+                "registers": "off",
+            },
+            "capture_backend": "gdb-current-session",
+            "event_count": len(filtered_events),
+            "filters": {
+                "start": "",
+                "stop": "",
+                "filter_func": "func_b",
+                "filter_range": "",
+            },
+            "raw_events": [event.__dict__ for event in raw_events],
+            "events": [event.__dict__ for event in filtered_events],
+            "capture_in_progress": True,
+            "capture_spool": str(spool_path),
+        }
+        (self.state_dir / "runtime.json").write_text(json.dumps(runtime_payload), encoding="utf-8")
+        resumed_segment = [
+            TraceEvent("call", 0, "resume_only"),
+            TraceEvent("inst", 1, "resume_only", "0x500000", "nop"),
+            TraceEvent("ret", 0, "resume_only"),
+        ]
+        spool_path.write_text(
+            "\n".join(json.dumps(event.__dict__) for event in resumed_segment) + "\n",
+            encoding="utf-8",
+        )
+
+        saved = self.run_cli("save")
+        self.assertEqual(saved.returncode, 0)
+        resumed_runtime = json.loads((self.state_dir / "runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual([event.__dict__ for event in filtered_events], resumed_runtime["events"])
+        self.assertEqual(len(raw_events) + len(resumed_segment), len(resumed_runtime["raw_events"]))
 
 
 if __name__ == "__main__":

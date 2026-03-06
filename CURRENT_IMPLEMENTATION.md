@@ -3,6 +3,7 @@
 ## 当前状态
 
 - 当前仓库已进入最小代码实现阶段。
+- 第三十一批代码已完成：已修复 resume 失败清空旧 trace 与 segment 级过滤错误两个高危问题。
 - 第三十批代码已完成：已移除默认最大步数限制，`start` 不再因 4096 步硬上限失败。
 - 第二十九批代码已完成：已将 paused 状态下的 `start` 修复为真正的恢复采集并追加事件。
 - 第二十八批代码已完成：已将 GDB 中 `Ctrl+C` 中断进一步收敛为自动 `pause + save` 的语义。
@@ -103,6 +104,8 @@
 - 已修复 paused 状态下的 `start`：当前会重新进入后端采集，并把新增事件 append 到现有 runtime，而不是只修改 `status=running`。
 - 已在 GDB 当前会话采集中移除中断态的伪造收尾 `ret` 事件，避免恢复后出现错误的断裂调用边界。
 - 已移除默认最大步数限制；当前仅在显式设置 `GDBTRACE_GDB_MAX_STEPS` 且值大于 `0` 时，才启用可选步数保险丝。
+- 已修复 paused 状态下 resume 失败的数据保留问题；当前恢复失败时会保留原 paused runtime，而不是清空既有 trace。
+- 已将 resume 与中断恢复的过滤逻辑改为基于完整 raw trace 重新计算，避免 segment 级过滤导致的误报错与错误结果。
 
 ## 当前验证状态
 
@@ -191,12 +194,15 @@
 - 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle.CliLifecycleTest.test_pause_start_save_stop_round_trip -v`，确认 paused 状态下再次 `start` 后 `event_count` 会继续增长，不再只是状态翻转。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_init.GdbInitInstallTest.test_gdbtrace_start_resume_interrupt_appends_trace_and_allows_stop -v`，确认真实交互式 GDB 中 `gdbtrace start -> Ctrl+C -> gdbtrace start -> Ctrl+C -> gdbtrace stop` 会继续追加 trace。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent -v`，确认默认缺省、空字符串、`0`、负值都不会再触发默认步数上限，且 unlimited 路径可正常采集多步事件。
+- 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle.CliLifecycleTest.test_resume_failure_preserves_existing_runtime tests.test_cli_lifecycle.CliLifecycleTest.test_resume_reapplies_filters_over_full_raw_trace tests.test_cli_lifecycle.CliLifecycleTest.test_save_after_interrupted_resume_keeps_prior_filtered_trace -v`，确认恢复失败不会丢失既有 trace，且 resume / interrupted-resume 均按完整 raw trace 重新过滤。
+- 已在宿主机执行 `python3 -m unittest tests.test_cli_lifecycle tests.test_gdb_agent -v`，确认本轮高危修复相关的 14 项 CLI / agent 回归全部通过。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_init -v`，当前 7 项 GDB 集成测试通过，其中 1 项交互式 PTY 用例因环境 `pty` 资源耗尽被跳过。
 
 ## 下一步
 
 1. 补跑更大范围的 QEMU 真实后端回归，确认 `aarch64`、ARM32 系和 RISC-V 系在复杂样例下保持一致。
 2. 在具备 `docker` 能力后，补跑容器 `ubuntu` 内的 GDB 安装与 `Ctrl+C` 自动 `pause + save` 语义验证。
-3. 继续收敛真实 GDB 采集链路中的通用部分，减少各 QEMU 后端的重复实现，并补更多 resume 语义回归。
+3. 继续收敛真实 GDB 采集链路中的通用部分，减少各 QEMU 后端的重复实现，并补更多 resume / filter 语义回归。
 
 ## 已知阻塞或风险
 
@@ -205,3 +211,4 @@
 - 基础样例和复杂样例已经落地，但更大规模的对拍样例和预期调用图资料仍需继续补充。
 - 动态链接用户态程序在部分架构上会较早进入 PLT/动态装载相关路径，当前 trace 能稳定覆盖关键业务函数和部分 `libc` 调用边界，但对更深层库内部执行流的还原仍有限。
 - 当前执行环境缺少 `docker` 命令，本轮无法按约定进入容器 `ubuntu` 完成安装验证；容器侧状态需在具备 `docker` 能力后补测。
+- 当前执行环境还出现 `pty` 资源耗尽，导致 1 项真实交互式 GDB 回归只能跳过；该用例需在 PTY 资源正常的环境中补跑。

@@ -374,7 +374,10 @@ class GdbInitInstallTest(unittest.TestCase):
             env["GDBTRACE_RUNTIME_FILE"] = str(workdir / "runtime.json")
             env["GDBTRACE_GDB_MAX_STEPS"] = "200000"
 
-            master_fd, slave_fd = pty.openpty()
+            try:
+                master_fd, slave_fd = pty.openpty()
+            except OSError as exc:
+                self.skipTest(f"pty unavailable: {exc}")
 
             def _preexec() -> None:
                 os.setsid()
