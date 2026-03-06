@@ -5,6 +5,7 @@
 - 当前仓库已进入最小代码实现阶段。
 - 第十七批代码已完成：已收敛寄存器输出 review 问题，包括采样时序、过滤重建保留和 `call` 模式采样收敛。
 - 第十八批代码已完成：已补齐原生环境下的 GDB init 自动化与交互式安装验证。
+- 正在推进第十九批代码：GDB 内命令集与 CLI 命令集对齐。
 - 已完成核心需求文档整理，主文档为 [README.md](/Users/caojunze424/code/gdb_trace/README.md)。
 - 已建立协作约束文档 [AGENTS.md](/Users/caojunze424/code/gdb_trace/AGENTS.md)。
 - 已完成第一批代码：CLI 配置状态管理。
@@ -133,16 +134,20 @@
 - 已在宿主机执行 `python3 -m unittest tests.test_trace_filters -v`，确认过滤重建深度后仍保留寄存器载荷并正确输出 `regs:` 行。
 - 已在宿主机执行 `python3 -m unittest tests.test_log_formatting -v`，确认 `call` 模式在 `set-registers on` 下不会采样或渲染寄存器内容。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent tests.test_trace_filters tests.test_log_formatting tests.test_cli_lifecycle -v`，当前与本轮修复直接相关的 17 项自动化测试全部通过。
-- 已在宿主机原生环境确认 `gdb`、`gdb-multiarch`、`aarch64-linux-gnu-gcc`、`qemu-arm` 可用，可支持本轮的本地基础回归验证。
+- 已在宿主机原生 Ubuntu 环境确认 `gdb`、`gdb-multiarch`、`aarch64-linux-gnu-gcc`、`arm-linux-gnueabihf-gcc`、`riscv64-linux-gnu-gcc`、`qemu-arm`、`qemu-riscv32`、`qemu-riscv64` 可用，可支持本轮本地真实后端验证。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_can_emit_registers_for_arm32 -v`，确认 ARM `qemu` gdb stub 真实链路下寄存器输出仍然正常。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_captures_basic_samples_for_riscv -v`，确认 RISC-V `qemu` gdb stub 真实链路仍可正常完成基础采集。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent tests.test_trace_filters tests.test_log_formatting tests.test_cli_lifecycle tests.test_gdb_qemu_arm_backend.QemuArmBackendTest.test_qemu_backend_can_emit_registers_for_arm32 tests.test_gdb_qemu_riscv_backend.QemuRiscvBackendTest.test_qemu_backend_captures_basic_samples_for_riscv -v`，当前与本轮修复直接相关的 19 项测试全部通过。
 - 已在宿主机尝试执行 `python3 -m unittest tests.test_gdb_native_backend.NativeGdbBackendTest.test_gdb_native_backend_can_emit_registers -v`；当前宿主机为 `x86_64`，`gdb-native` 路径需要直接运行 `aarch64` ELF，因此在断点插入阶段失败，不构成本轮修复回归结论。
-- 已确认宿主机缺少 `arm-linux-gnueabihf-gcc` 与 `riscv64-linux-gnu-gcc`，因此本轮无法在宿主机补做 ARM / RISC-V 真实后端的交叉编译回归。
 - 当前环境缺少 `docker` 可执行文件，本轮未能进入指定容器 `ubuntu` 执行安装与验证；该阻塞已记录。
 
 ## 下一步
 
-1. 在 `docker` 能力恢复后，于指定容器 `ubuntu` 中补做本轮寄存器修复的容器回归验证。
-2. 继续恢复并推进 GDB 安装入口相关容器验证。
-3. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
+1. 在 GDB init 中注册与 `USAGE.md` 一致的 `set-*` / `show-*` / `clear-*` / 生命周期命令。
+2. 补充自动化测试，验证 `help user-defined` 中可见全部命令，且交互式 GDB 中可直接完成最小 trace 流程。
+3. 在 `docker` 能力恢复后，于指定容器 `ubuntu` 中补做本轮寄存器修复的容器回归验证。
+4. 继续恢复并推进 GDB 安装入口相关容器验证。
+5. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
 
 ## 已知阻塞或风险
 
