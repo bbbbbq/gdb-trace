@@ -62,6 +62,8 @@ gdbtrace save
 gdbtrace stop
 ```
 
+在 GDB 会话中，如果你已经先执行了 `file /path/to/program`，那么 `gdbtrace start` 在未显式执行 `gdbtrace set-elf` 时，会自动继承当前已加载的 ELF。
+
 如果需要直接调用低层 agent，也可使用：
 
 ```gdb

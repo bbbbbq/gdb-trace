@@ -43,13 +43,23 @@ def _ensure_repo_on_sys_path() -> None:
 def _invoke_cli_command(name: str, arg: str) -> None:
     _ensure_repo_on_sys_path()
     from gdbtrace.cli import build_parser
-    from gdbtrace.state import GdbTraceError, resolve_paths
+    from gdbtrace.state import GdbTraceError, resolve_paths, save_session_state, session_state
 
     parser = build_parser()
     argv = [name, *gdb.string_to_argv(arg)]
+    paths = resolve_paths()
+
+    if name == "start":
+        session = session_state(paths)
+        if not session.get("elf"):
+            current_elf = gdb.current_progspace().filename
+            if current_elf:
+                session["elf"] = current_elf
+                save_session_state(paths, session)
+
     try:
         parsed = parser.parse_args(argv)
-        return_code = parsed.handler(parsed, resolve_paths())
+        return_code = parsed.handler(parsed, paths)
     except GdbTraceError as exc:
         raise gdb.GdbError(f"error: {exc}") from exc
     except SystemExit as exc:

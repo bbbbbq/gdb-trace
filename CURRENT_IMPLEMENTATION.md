@@ -4,6 +4,7 @@
 
 - 当前仓库已进入最小代码实现阶段。
 - 第二十批代码已完成：真实后端测试已统一切换为 QEMU 路径，AArch64 现通过 `qemu-aarch64` gdb stub 验证。
+- 第二十二批代码已完成：GDB 会话中未显式 `set-elf` 时可自动继承当前已加载 ELF。
 - 第二十一批代码已完成：GDB 命令命名空间已改为 `gdbtrace <subcommand>`，避免与 GDB 和其他插件命令冲突。
 - 第十七批代码已完成：已收敛寄存器输出 review 问题，包括采样时序、过滤重建保留和 `call` 模式采样收敛。
 - 第十八批代码已完成：已补齐原生环境下的 GDB init 自动化与交互式安装验证。
@@ -82,6 +83,7 @@
 - 已在 `gdbtrace/gdb_init.py` 中注册与 CLI 一致的 GDB 用户命令：`set-target`、`set-default-target`、`show-target`、`clear-target`、`clear-default-target`、`set-arch`、`set-elf`、`set-output`、`set-mode`、`set-registers`、`show-config`、`clear-arch`、`clear-elf`、`clear-output`、`clear-mode`、`clear-registers`、`start`、`pause`、`save`、`stop`。
 - 已让 GDB 用户命令复用现有 CLI handler、状态文件与校验逻辑，避免形成第二套命令实现。
 - 已将 GDB 用户命令统一收敛到 `gdbtrace <subcommand>` 命名空间下，包括 `gdbtrace set-target`、`gdbtrace start`、`gdbtrace stop` 和低层 `gdbtrace run`。
+- 已在 GDB 命令桥接层加入 ELF 自动继承：若当前 GDB 已通过 `file <elf>` 加载程序，且未执行 `gdbtrace set-elf`，则 `gdbtrace start` 会自动写入并使用该 ELF。
 
 ## 当前验证状态
 
@@ -141,6 +143,8 @@
 - 已在宿主机执行真实交互式 GDB 会话，并直接使用 `set-target`、`set-arch`、`set-elf`、`set-output`、`set-mode`、`show-config`、`show-target`、`start`、`save`、`stop` 验证命令集可用；同时确认 `/tmp/trace.log` 与 `/tmp/trace.call.log` 成功落盘。
 - 已在宿主机执行更新后的 `python3 -m unittest tests.test_gdb_init -v`，确认 `help user-defined` 与 `help gdbtrace` 中均显示 `gdbtrace <subcommand>` 形式的命令集，且交互式 GDB 中可直接完成 `gdbtrace set-target -> gdbtrace set-arch -> gdbtrace set-elf -> gdbtrace set-output -> gdbtrace set-mode -> gdbtrace start -> gdbtrace save -> gdbtrace stop` 最小流程。
 - 已在宿主机执行真实交互式 GDB 会话，并直接使用 `gdbtrace set-target`、`gdbtrace set-arch`、`gdbtrace set-elf`、`gdbtrace set-output`、`gdbtrace set-mode`、`gdbtrace show-config`、`gdbtrace show-target`、`gdbtrace start`、`gdbtrace save`、`gdbtrace stop` 验证命名空间已生效；同时确认 `/tmp/trace_ns.log` 与 `/tmp/trace_ns.call.log` 成功落盘。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_init -v`，新增覆盖“仅通过 GDB `file /bin/true` 加载 ELF、未执行 `gdbtrace set-elf`、直接 `gdbtrace start`”场景，当前 3 项 `gdb_init` 测试全部通过。
+- 已在宿主机执行真实交互式 GDB 会话，并完成 `file /bin/true -> gdbtrace set-target -> gdbtrace set-arch -> gdbtrace set-output -> gdbtrace set-mode -> gdbtrace start -> gdbtrace save -> gdbtrace stop` 验证，确认日志头和会话状态均自动继承 `elf=/usr/bin/true`。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent -v`，确认寄存器采样发生在 `stepi` 之后，并覆盖 `_step_until_exit()` 路径。
 - 已在宿主机执行 `python3 -m unittest tests.test_trace_filters -v`，确认过滤重建深度后仍保留寄存器载荷并正确输出 `regs:` 行。
 - 已在宿主机执行 `python3 -m unittest tests.test_log_formatting -v`，确认 `call` 模式在 `set-registers on` 下不会采样或渲染寄存器内容。

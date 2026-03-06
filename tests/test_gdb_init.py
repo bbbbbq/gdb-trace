@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import tempfile
 import unittest
@@ -130,6 +131,59 @@ class GdbInitInstallTest(unittest.TestCase):
             self.assertNotIn("Undefined command", result.stdout)
             self.assertTrue((workdir / "trace.log").exists())
             self.assertTrue((workdir / "trace.call.log").exists())
+
+    def test_gdbtrace_start_can_infer_elf_from_current_gdb_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_home, tempfile.TemporaryDirectory() as temp_workdir:
+            workdir = Path(temp_workdir)
+            gdbinit_path = Path(temp_home) / ".gdbinit"
+            gdbinit_path.write_text(
+                "\n".join(
+                    [
+                        "python",
+                        "import runpy",
+                        f"runpy.run_path({str(INIT_SCRIPT)!r}, run_name='__main__')",
+                        "end",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            env.pop("PYTHONPATH", None)
+            env["GDBTRACE_GLOBAL_CONFIG"] = str(workdir / "global.json")
+            env["GDBTRACE_SESSION_FILE"] = str(workdir / "session.json")
+            env["GDBTRACE_RUNTIME_FILE"] = str(workdir / "runtime.json")
+            env["GDBTRACE_CAPTURE_BACKEND"] = "static"
+
+            result = self.run_gdb(
+                "-q",
+                input_text=(
+                    "set pagination off\n"
+                    "file /bin/true\n"
+                    "gdbtrace set-target 127.0.0.1:1234\n"
+                    "gdbtrace set-arch aarch64\n"
+                    "gdbtrace set-output infer.log\n"
+                    "gdbtrace set-mode both\n"
+                    "gdbtrace start\n"
+                    "gdbtrace save\n"
+                    "gdbtrace stop\n"
+                    "quit\n"
+                ),
+                env=env,
+                cwd=workdir,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            self.assertIn("Reading symbols from /bin/true", result.stdout)
+            self.assertIn("trace started", result.stdout)
+            self.assertTrue((workdir / "infer.log").exists())
+            self.assertTrue((workdir / "infer.call.log").exists())
+            self.assertIn("elf=/usr/bin/true", (workdir / "infer.log").read_text(encoding="utf-8"))
+
+            session_payload = json.loads((workdir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual(session_payload["elf"], "/usr/bin/true")
 
 
 if __name__ == "__main__":
