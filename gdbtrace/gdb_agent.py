@@ -180,6 +180,17 @@ def _current_registers(arch: str, enabled: bool) -> dict[str, str]:
     return registers
 
 
+def _step_and_capture_registers(arch: str, enabled: bool) -> tuple[dict[str, str], bool]:
+    try:
+        gdb.execute("stepi")
+    except gdb.error as exc:
+        message = str(exc)
+        if "exited" not in message and "Inferior" not in message and "program is not being run" not in message:
+            raise
+        return {}, True
+    return _current_registers(arch, enabled), False
+
+
 def _common_prefix_size(left: list[str], right: list[str]) -> int:
     common = 0
     for left_value, right_value in zip(left, right):
@@ -239,6 +250,7 @@ def _step_until_exit(max_steps: int, events: list[dict[str, object]], arch: str,
             if "No registers" in str(exc):
                 break
             raise
+        registers, exited = _step_and_capture_registers(arch, register_output)
         events.append(
             {
                 "kind": "inst",
@@ -246,17 +258,11 @@ def _step_until_exit(max_steps: int, events: list[dict[str, object]], arch: str,
                 "function": "",
                 "pc": pc,
                 "instruction": instruction,
-                "registers": _current_registers(arch, register_output),
+                "registers": registers,
             }
         )
         steps += 1
-
-        try:
-            gdb.execute("stepi")
-        except gdb.error as exc:
-            message = str(exc)
-            if "exited" not in message and "Inferior" not in message and "program is not being run" not in message:
-                raise
+        if exited:
             break
     return steps
 
@@ -314,6 +320,7 @@ def run() -> None:
             break
 
         pc, instruction = _current_instruction()
+        registers, exited = _step_and_capture_registers(arch, register_output)
         events.append(
             {
                 "kind": "inst",
@@ -321,17 +328,11 @@ def run() -> None:
                 "function": current_stack[-1],
                 "pc": pc,
                 "instruction": instruction,
-                "registers": _current_registers(arch, register_output),
+                "registers": registers,
             }
         )
         steps += 1
-
-        try:
-            gdb.execute("stepi")
-        except gdb.error as exc:
-            message = str(exc)
-            if "exited" not in message and "Inferior" not in message and "program is not being run" not in message:
-                raise
+        if exited:
             break
 
         observed_stack = _relevant_stack()
