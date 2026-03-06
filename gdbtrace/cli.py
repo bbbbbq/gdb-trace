@@ -187,6 +187,10 @@ def _snapshot_output_message(runtime: dict[str, object]) -> str:
     return ", ".join(str(path) for path, _ in _log_targets(runtime))
 
 
+def _capture_registers_enabled(session: dict[str, str]) -> bool:
+    return session.get("registers", "off") == "on" and session.get("mode") != "call"
+
+
 def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
     runtime = _active_runtime(paths)
     if runtime.get("status") == "running":
@@ -212,7 +216,7 @@ def cmd_start(args: argparse.Namespace, paths: Paths) -> int:
             mode=session["mode"],
             target=target,
             elf=session["elf"],
-            registers=session.get("registers", "off") == "on",
+            registers=_capture_registers_enabled(session),
         )
     )
     filtered_events = apply_filters(

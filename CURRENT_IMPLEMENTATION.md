@@ -3,7 +3,7 @@
 ## 当前状态
 
 - 当前仓库已进入最小代码实现阶段。
-- 正在推进第十七批代码：寄存器输出 review 问题修正，当前处理 `call` 模式下的寄存器采样收敛。
+- 第十七批代码已完成：已收敛寄存器输出 review 问题，包括采样时序、过滤重建保留和 `call` 模式采样收敛。
 - 已完成核心需求文档整理，主文档为 [README.md](/Users/caojunze424/code/gdb_trace/README.md)。
 - 已建立协作约束文档 [AGENTS.md](/Users/caojunze424/code/gdb_trace/AGENTS.md)。
 - 已完成第一批代码：CLI 配置状态管理。
@@ -69,6 +69,7 @@
 - 已在事件模型、真实 GDB 后端和日志格式化层中接入可选寄存器输出；开启后，`inst` 与 `both` 模式会在每条指令后追加 `regs:` 行。
 - 已修复真实 GDB 后端的寄存器采样时序，当前 `regs:` 采样点位于 `stepi` 之后，语义与 README 中“每条指令执行后”保持一致。
 - 已修复过滤重建事件时丢失 `registers` 载荷的问题，过滤后的 `both` / `inst` 日志仍可继续输出 `regs:` 行。
+- 已修复 `call` 模式下的无效寄存器采样；当前仅 `inst` / `both` 模式会触发寄存器采集，`call` 日志头也不再显示误导性的寄存器标记。
 - 已新增 `gdbtrace/gdb_init.py`，可供 GDB 通过 `runpy.run_path(...)` 加载，并注册 `gdbtrace-run` 用户命令。
 - 已完成当前用户 `~/.gdbinit` 的最小安装接入，使本机 GDB 启动后自动加载 `gdbtrace` 初始化脚本。
 
@@ -126,12 +127,15 @@
 - 已在宿主机执行 `gdb -q -batch -ex "help user-defined"`，确认普通启动 GDB 后已自动出现 `gdbtrace-run`。
 - 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent -v`，确认寄存器采样发生在 `stepi` 之后，并覆盖 `_step_until_exit()` 路径。
 - 已在宿主机执行 `python3 -m unittest tests.test_trace_filters -v`，确认过滤重建深度后仍保留寄存器载荷并正确输出 `regs:` 行。
+- 已在宿主机执行 `python3 -m unittest tests.test_log_formatting -v`，确认 `call` 模式在 `set-registers on` 下不会采样或渲染寄存器内容。
+- 已在宿主机执行 `python3 -m unittest tests.test_gdb_agent tests.test_trace_filters tests.test_log_formatting tests.test_cli_lifecycle -v`，当前与本轮修复直接相关的 17 项自动化测试全部通过。
 - 当前环境缺少 `docker` 可执行文件，本轮未能进入指定容器 `ubuntu` 执行安装与验证；该阻塞已记录。
 
 ## 下一步
 
-1. 修复 `call` 模式下仍启用寄存器采样的无效开销，并同步收敛日志头行为。
-2. 在本轮寄存器 review 问题收敛后，恢复 GDB 安装入口相关容器验证。
+1. 在 `docker` 能力恢复后，于指定容器 `ubuntu` 中补做本轮寄存器修复的容器回归验证。
+2. 继续恢复并推进 GDB 安装入口相关容器验证。
+3. 继续收敛真实 GDB 采集链路中的通用部分，减少 `gdb-native`、`gdb-qemu-arm`、`gdb-qemu-riscv` 的重复实现。
 
 ## 已知阻塞或风险
 

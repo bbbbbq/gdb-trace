@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -93,6 +94,18 @@ class LogFormattingTest(unittest.TestCase):
         content = self.output_path.read_text(encoding="utf-8")
         self.assertIn("        regs: x0=", content)
         self.assertIn("x29=", content)
+
+    def test_call_mode_does_not_capture_or_render_registers(self) -> None:
+        self.configure("call", registers="on")
+        self.assertEqual(self.run_cli("save").returncode, 0)
+        content = self.output_path.read_text(encoding="utf-8")
+        self.assertNotIn("[registers] on", content)
+        self.assertNotIn("regs:", content)
+
+        runtime = json.loads(Path(self.env["GDBTRACE_RUNTIME_FILE"]).read_text(encoding="utf-8"))
+        inst_events = [event for event in runtime["events"] if event["kind"] == "inst"]
+        self.assertTrue(inst_events)
+        self.assertTrue(all(event["registers"] == {} for event in inst_events))
 
 
 if __name__ == "__main__":

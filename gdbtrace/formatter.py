@@ -74,7 +74,7 @@ def render_log_header(
         f"[output] path={output_path}",
         f"[capture] backend={runtime['capture_backend']} events={runtime['event_count']}",
     ]
-    if config.get("registers", "off") == "on":
+    if config.get("registers", "off") == "on" and render_mode != "call":
         lines.append("[registers] on")
     if filters.get("start"):
         lines.append(f"[range] start={filters['start']}")
